@@ -134,14 +134,14 @@ Simplify Iron Rook PR review system by removing bloat (streaming, discovery, dua
 - Test coverage: All tests pass (pre-refactor baseline + post-refactor regression tests)
 
 ### Definition of Done
-- [ ] All 11 reviewers run successfully on test PR (no regressions)
-- [ ] CLI works with existing commands (`iron-rook review`, `iron-rook docs`)
+- [x] All 11 reviewers run successfully on test PR (no regressions)
+- [x] CLI works with existing commands (`iron-rook review`, `iron-rook docs`)
 - [ ] dawn-kestrel Session replaces custom SecurityReviewOrchestrator (deleted)
 - [ ] ReviewStreamManager, EntryPointDiscovery, BudgetTracker removed (files deleted)
 - [ ] Second-wave delegation removed
 - [ ] Dual execution paths removed (AgentRuntime only)
 - [ ] ContextBuilder inlined into CLI (no separate module)
-- [ ] All pytest tests pass (pre-refactor baseline + post-refactor regression tests)
+- [x] All pytest tests pass (pre-refactor baseline + post-refactor regression tests)
 - [ ] No dead imports or unreachable code
 - [ ] pyflakes shows clean code
 - [ ] CLI output format matches current structure
@@ -206,7 +206,7 @@ Simplify Iron Rook PR review system by removing bloat (streaming, discovery, dua
    - Expected: PASS (still)
 
 **Test Setup Task** (if infrastructure issues):
-- [ ] 0. Verify Test Infrastructure
+- [x] 0. Verify Test Infrastructure
   - Run: `pytest --version`
   - Expected: pytest version shown
   - Run: `pytest tests/ --collect-only`
@@ -1792,7 +1792,7 @@ Parallel Speedup: ~45% faster than sequential
 
 ---
 
-- [ ] 16. Full Regression Test Suite
+- [x] 16. Full Regression Test Suite
 
   **What to do**:
   - Run complete pytest test suite (all tests)
@@ -1911,7 +1911,7 @@ python -m iron_rook review --help  # Expected: Help text shows successfully
 - [ ] Dual execution paths removed (AgentRuntime only)
 - [ ] ContextBuilder inlined into CLI (no separate module)
 - [ ] dawn-kestrel Session replaces custom SecurityReviewOrchestrator (deleted)
-- [ ] CLI uses dawn-kestrel Session for FSM orchestration
+- [x] CLI uses dawn-kestrel Session for FSM orchestration
 - [ ] All pytest tests pass (pre-refactor baseline + post-refactor regression)
 - [ ] No dead imports or unreachable code
 - [ ] pyflakes shows clean code
