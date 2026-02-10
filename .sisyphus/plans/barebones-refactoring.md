@@ -1218,7 +1218,7 @@ Parallel Speedup: ~45% faster than sequential
 
 ---
 
-- [ ] 10. Remove Custom Security Review Orchestrator
+- [x] 10. Remove Custom Security Review Orchestrator
 
   **What to do**:
   - Delete `iron_rook/review/fsm_security_orchestrator.py` file
@@ -1316,7 +1316,7 @@ Parallel Speedup: ~45% faster than sequential
 
 ---
 
-- [ ] 11. Remove Security FSM Contracts
+- [x] 11. Remove Security FSM Contracts
 
   **What to do**:
   - Remove FSM-specific contracts from contracts.py: PhaseOutput, SecurityTodo, SubagentResult, PullRequestChangeList, SecurityReviewReport, FSMState
@@ -1400,7 +1400,7 @@ Parallel Speedup: ~45% faster than sequential
 
 ---
 
-- [ ] 12. Remove FSMSecurityOrchestrator
+- [x] 12. Remove FSMSecurityOrchestrator
 
   **What to do**:
   - Delete `iron_rook/review/FSMSecurityOrchestrator.py` file (if exists)
