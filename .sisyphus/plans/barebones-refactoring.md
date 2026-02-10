@@ -136,15 +136,15 @@ Simplify Iron Rook PR review system by removing bloat (streaming, discovery, dua
 ### Definition of Done
 - [x] All 11 reviewers run successfully on test PR (no regressions)
 - [x] CLI works with existing commands (`iron-rook review`, `iron-rook docs`)
-- [ ] dawn-kestrel Session replaces custom SecurityReviewOrchestrator (deleted)
-- [ ] ReviewStreamManager, EntryPointDiscovery, BudgetTracker removed (files deleted)
-- [ ] Second-wave delegation removed
-- [ ] Dual execution paths removed (AgentRuntime only)
-- [ ] ContextBuilder inlined into CLI (no separate module)
+- [x] dawn-kestrel Session replaces custom SecurityReviewOrchestrator (deleted)
+- [x] ReviewStreamManager, EntryPointDiscovery, BudgetTracker removed (files deleted)
+- [x] Second-wave delegation removed
+- [x] Dual execution paths removed (AgentRuntime only)
+- [x] ContextBuilder inlined into CLI (no separate module)
 - [x] All pytest tests pass (pre-refactor baseline + post-refactor regression tests)
-- [ ] No dead imports or unreachable code
-- [ ] pyflakes shows clean code
-- [ ] CLI output format matches current structure
+- [x] No dead imports or unreachable code
+- [x] pyflakes shows clean code
+- [x] CLI output format matches current structure
 
 ### Must Have
 - All 11 reviewers (6 core + 5 optional) preserved exactly as-is
@@ -1906,15 +1906,15 @@ python -m iron_rook review --help  # Expected: Help text shows successfully
 
 ### Final Checklist
 - [x] All 11 reviewers preserved and working
-- [ ] ReviewStreamManager, EntryPointDiscovery, BudgetTracker removed (files deleted)
-- [ ] Second-wave delegation removed
-- [ ] Dual execution paths removed (AgentRuntime only)
-- [ ] ContextBuilder inlined into CLI (no separate module)
-- [ ] dawn-kestrel Session replaces custom SecurityReviewOrchestrator (deleted)
+- [x] ReviewStreamManager, EntryPointDiscovery, BudgetTracker removed (files deleted)
+- [x] Second-wave delegation removed
+- [x] Dual execution paths removed (AgentRuntime only)
+- [x] ContextBuilder inlined into CLI (no separate module)
+- [x] dawn-kestrel Session replaces custom SecurityReviewOrchestrator (deleted)
 - [x] CLI uses dawn-kestrel Session for FSM orchestration
-- [ ] All pytest tests pass (pre-refactor baseline + post-refactor regression)
-- [ ] No dead imports or unreachable code
-- [ ] pyflakes shows clean code
-- [ ] CLI works with existing commands
-- [ ] CLI output format matches current structure
+- [x] All pytest tests pass (pre-refactor baseline + post-refactor regression)
+- [x] No dead imports or unreachable code
+- [x] pyflakes shows clean code
+- [x] CLI works with existing commands
+- [x] CLI output format matches current structure
 
