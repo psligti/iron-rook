@@ -35,7 +35,7 @@ def log_verbose_subagent_info(subagents: list) -> None:
 
     for idx, agent in enumerate(subagents, 1):
         agent_name = agent.get_agent_name()
-        logger.info(f"[VERBOSE]")
+        logger.info("[VERBOSE]")
         logger.info(f"[VERBOSE] Subagent #{idx}: {agent_name}")
         logger.info(f"[VERBOSE]   Class: {agent.__class__.__name__}")
         logger.info(f"[VERBOSE]   Module: {agent.__class__.__module__}")
@@ -84,7 +84,7 @@ def log_verbose_result_details(result) -> None:
     logger.info(
         f"[VERBOSE] Summary: {result.summary[:300]}{'...' if len(result.summary) > 300 else ''}"
     )
-    logger.info(f"[VERBOSE]")
+    logger.info("[VERBOSE]")
 
     logger.info(f"[VERBOSE] Scope:")
     logger.info(f"[VERBOSE]   Relevant files: {len(result.scope.relevant_files)}")
@@ -98,7 +98,7 @@ def log_verbose_result_details(result) -> None:
         f"[VERBOSE]   Reasoning: {result.scope.reasoning[:200]}{'...' if len(result.scope.reasoning) > 200 else ''}"
     )
 
-    logger.info(f"[VERBOSE]")
+    logger.info("[VERBOSE]")
     logger.info(f"[VERBOSE] Findings ({len(result.findings)}):")
     for idx, finding in enumerate(result.findings, 1):
         logger.info(f"[VERBOSE]   #{idx} {finding.title}")
@@ -114,14 +114,14 @@ def log_verbose_result_details(result) -> None:
             f"[VERBOSE]       Recommendation: {finding.recommendation[:150]}{'...' if len(finding.recommendation) > 150 else ''}"
         )
 
-    logger.info(f"[VERBOSE]")
+    logger.info("[VERBOSE]")
     logger.info(f"[VERBOSE] Checks ({len(result.checks)}):")
     for idx, check in enumerate(result.checks, 1):
         logger.info(f"[VERBOSE]   #{idx} {check.check_id}")
         logger.info(f"[VERBOSE]       Required: {check.required}")
         logger.info(f"[VERBOSE]       Commands: {len(check.commands)}")
 
-    logger.info(f"[VERBOSE]")
+    logger.info("[VERBOSE]")
     logger.info(f"[VERBOSE] Skips ({len(result.skips)}):")
     for idx, skip in enumerate(result.skips, 1):
         logger.info(f"[VERBOSE]   #{idx} {skip.check_id}")
@@ -129,7 +129,7 @@ def log_verbose_result_details(result) -> None:
             f"[VERBOSE]       Reason: {skip.skip_reason[:100]}{'...' if len(skip.skip_reason) > 100 else ''}"
         )
 
-    logger.info(f"[VERBOSE]")
+    logger.info("[VERBOSE]")
     logger.info(f"[VERBOSE] Merge Gate:")
     logger.info(f"[VERBOSE]   Decision: {result.merge_gate.decision}")
     logger.info(f"[VERBOSE]   Must fix: {len(result.merge_gate.must_fix)}")
@@ -196,7 +196,7 @@ async def log_verbose_todos(repo_root: str) -> None:
                 priority = todo.get("priority", "medium")
                 description = todo.get("description", "")
 
-                logger.info(f"[VERBOSE]")
+                logger.info("[VERBOSE]")
                 logger.info(f"[VERBOSE]   #{idx} [{state.upper()}] [{priority.upper()}]")
                 logger.info(
                     f"[VERBOSE]       {description[:150]}{'...' if len(description) > 150 else ''}"

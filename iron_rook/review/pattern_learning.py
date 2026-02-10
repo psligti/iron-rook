@@ -68,9 +68,6 @@ class PatternLearning:
                 logger.warning(f"Invalid pattern structure for {agent_name}: {pattern}")
                 return False
 
-            # Get staged patterns file path
-            staged_file = self._get_staged_file_path(agent_name)
-
             # Load existing staged patterns
             staged_patterns = self._load_staged_patterns(agent_name)
 
