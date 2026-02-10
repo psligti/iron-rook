@@ -1,0 +1,261 @@
+diff --git a/iron_rook/review/cli.py b/iron_rook/review/cli.py
+index a022809..404086f 100644
+--- a/iron_rook/review/cli.py
++++ b/iron_rook/review/cli.py
+@@ -3,13 +3,16 @@
+ from __future__ import annotations
+ 
+ import asyncio
+-import logging
++import json
+ import sys
+ from pathlib import Path
+ from typing import Literal
+ 
+-import click  # type: ignore[import-not-found]
+-from rich.console import Console  # type: ignore[import-not-found]
++import click
++from rich.console import Console
++
++from iron_rook.review.contracts import ReviewOutput, OrchestratorOutput
++from iron_rook.review.logging_utils import ReviewLogger
+ 
+ console = Console()
+ 
+@@ -20,46 +23,72 @@ def log_verbose_subagent_info(subagents: list) -> None:
+     Args:
+         subagents: List of subagent instances
+     """
+-    import logging
+-
+-    logger = logging.getLogger(__name__)
+-
+-    if not logger.isEnabledFor(logging.DEBUG):
++    if not _logger.verbose_logging_enabled():
+         return
+ 
+-    logger.info("")
+-    logger.info("[VERBOSE] ===== SUBAGENT INFORMATION =====")
+-    logger.info(f"[VERBOSE] Total subagents: {len(subagents)}")
++    _logger.logger.info("")
++    _logger.logger.info("[VERBOSE] ===== SUBAGENT INFORMATION =====")
++    _logger.logger.info(f"[VERBOSE] Total subagents: {len(subagents)}")
+ 
+     for idx, agent in enumerate(subagents, 1):
+         agent_name = agent.get_agent_name()
+-        logger.info(f"[VERBOSE]")
+-        logger.info(f"[VERBOSE] Subagent #{idx}: {agent_name}")
+-        logger.info(f"[VERBOSE]   Class: {agent.__class__.__name__}")
+-        logger.info(f"[VERBOSE]   Module: {agent.__class__.__module__}")
++        _logger.logger.info("[VERBOSE]")
++        _logger.logger.info(f"[VERBOSE] Subagent #{idx}: {agent_name}")
++        _logger.logger.info(f"[VERBOSE]   Class: {agent.__class__.__name__}")
++        _logger.logger.info(f"[VERBOSE]   Module: {agent.__class__.__module__}")
+ 
+         try:
+             patterns = agent.get_relevant_file_patterns()
+-            logger.info(f"[VERBOSE]   Relevant patterns: {len(patterns)}")
++            _logger.logger.info(f"[VERBOSE]   Relevant patterns: {len(patterns)}")
+             for pattern in patterns[:5]:
+-                logger.info(f"[VERBOSE]     - {pattern}")
++                _logger.logger.info(f"[VERBOSE]     - {pattern}")
+             if len(patterns) > 5:
+-                logger.info(f"[VERBOSE]     ... and {len(patterns) - 5} more")
++                _logger.logger.info(f"[VERBOSE]     ... and {len(patterns) - 5} more")
+         except Exception as e:
+-            logger.warning(f"[VERBOSE]   Could not get relevant patterns: {e}")
++            _logger.logger.warning(f"[VERBOSE]   Could not get relevant patterns: {e}")
+ 
+         try:
+             tools = agent.get_allowed_tools()
+-            logger.info(f"[VERBOSE]   Allowed tools: {len(tools)}")
++            _logger.logger.info(f"[VERBOSE]   Allowed tools: {len(tools)}")
+             if tools:
+-                logger.info(f"[VERBOSE]     {', '.join(tools[:10])}")
++                _logger.logger.info(f"[VERBOSE]     {', '.join(tools[:10])}")
+                 if len(tools) > 10:
+-                    logger.info(f"[VERBOSE]     ... and {len(tools) - 10} more")
++                    _logger.logger.info(f"[VERBOSE]     ... and {len(tools) - 10} more")
+         except Exception as e:
+-            logger.warning(f"[VERBOSE]   Could not get allowed tools: {e}")
++            _logger.logger.warning(f"[VERBOSE]   Could not get allowed tools: {e}")
+ 
+-    logger.info("[VERBOSE] ===== END SUBAGENT INFORMATION =====")
+-    logger.info("")
++    _logger.logger.info("[VERBOSE] ===== END SUBAGENT INFORMATION =====")
++    _logger.logger.info("")
++
++    for idx, agent in enumerate(subagents, 1):
++        agent_name = agent.get_agent_name()
++        _logger.logger.info("[VERBOSE]")
++        _logger.logger.info(f"[VERBOSE] Subagent #{idx}: {agent_name}")
++        _logger.logger.info(f"[VERBOSE]   Class: {agent.__class__.__name__}")
++        _logger.logger.info(f"[VERBOSE]   Module: {agent.__class__.__module__}")
++
++        try:
++            patterns = agent.get_relevant_file_patterns()
++            _logger.logger.info(f"[VERBOSE]   Relevant patterns: {len(patterns)}")
++            for pattern in patterns[:5]:
++                _logger.logger.info(f"[VERBOSE]     - {pattern}")
++            if len(patterns) > 5:
++                _logger.logger.info(f"[VERBOSE]     ... and {len(patterns) - 5} more")
++        except Exception as e:
++            _logger.logger.warning(f"[VERBOSE]   Could not get relevant patterns: {e}")
++
++        try:
++            tools = agent.get_allowed_tools()
++            _logger.logger.info(f"[VERBOSE]   Allowed tools: {len(tools)}")
++            if tools:
++                _logger.logger.info(f"[VERBOSE]     {', '.join(tools[:10])}")
++                if len(tools) > 10:
++                    _logger.logger.info(f"[VERBOSE]     ... and {len(tools) - 10} more")
++        except Exception as e:
++            _logger.logger.warning(f"[VERBOSE]   Could not get allowed tools: {e}")
++
++    _logger.logger.info("[VERBOSE] ===== END SUBAGENT INFORMATION =====")
++    _logger.logger.info("")
+ 
+ 
+ def log_verbose_result_details(result) -> None:
+@@ -68,15 +97,13 @@ def log_verbose_result_details(result) -> None:
+     Args:
+         result: ReviewOutput object
+     """
+-    import logging
++    logger = _logger
+ 
+-    logger = logging.getLogger(__name__)
+-
+-    if not logger.isEnabledFor(logging.DEBUG):
++    if not _logger.verbose_logging_enabled():
+         return
+ 
+-    logger.info("")
+-    logger.info(f"[VERBOSE] ===== RESULT DETAILS: {result.agent} =====")
++    _logger.logger.info("")
++    _logger.logger.info(f"[VERBOSE] ===== RESULT DETAILS: {result.agent} =====")
+     logger.info(f"[VERBOSE] Agent: {result.agent}")
+     logger.info(f"[VERBOSE] Severity: {result.severity}")
+     logger.info(
+@@ -160,12 +187,11 @@ async def log_verbose_todos(repo_root: str) -> None:
+     Args:
+         repo_root: Repository root directory
+     """
+-    import logging
+     from pathlib import Path
+ 
+-    logger = logging.getLogger(__name__)
++    logger = _logger
+ 
+-    if not logger.isEnabledFor(logging.DEBUG):
++    if not _logger.verbose_logging_enabled():
+         return
+ 
+     try:
+@@ -177,41 +203,41 @@ async def log_verbose_todos(repo_root: str) -> None:
+         todos = await todo_storage.get_todos(session_id)
+ 
+         if todos:
+-            logger.info("")
+-            logger.info("[VERBOSE] ===== TODO LIST =====")
+-            logger.info(f"[VERBOSE] Total todos: {len(todos)}")
++            _logger.logger.info("")
++            _logger.logger.info("[VERBOSE] ===== TODO LIST =====")
++            _logger.logger.info(f"[VERBOSE] Total todos: {len(todos)}")
+ 
+             completed_count = sum(1 for t in todos if t.get("state") == "completed")
+             in_progress_count = sum(1 for t in todos if t.get("state") == "in_progress")
+             pending_count = sum(1 for t in todos if t.get("state") == "pending")
+ 
+-            logger.info(f"[VERBOSE]   Completed: {completed_count}")
+-            logger.info(f"[VERBOSE]   In Progress: {in_progress_count}")
+-            logger.info(f"[VERBOSE]   Pending: {pending_count}")
++            _logger.logger.info(f"[VERBOSE]   Completed: {completed_count}")
++            _logger.logger.info(f"[VERBOSE]   In Progress: {in_progress_count}")
++            _logger.logger.info(f"[VERBOSE]   Pending: {pending_count}")
+ 
+             for idx, todo in enumerate(todos, 1):
+                 state = todo.get("state", "unknown")
+                 priority = todo.get("priority", "medium")
+                 description = todo.get("description", "")
+ 
+-                logger.info(f"[VERBOSE]")
+-                logger.info(f"[VERBOSE]   #{idx} [{state.upper()}] [{priority.upper()}]")
+-                logger.info(
++                _logger.logger.info("[VERBOSE]")
++                _logger.logger.info(f"[VERBOSE]   #{idx} [{state.upper()}] [{priority.upper()}]")
++                _logger.logger.info(
+                     f"[VERBOSE]       {description[:150]}{'...' if len(description) > 150 else ''}"
+                 )
+ 
+                 if todo.get("created_at"):
+-                    logger.info(f"[VERBOSE]       Created: {todo['created_at']}")
++                    _logger.logger.info(f"[VERBOSE]       Created: {todo['created_at']}")
+                 if todo.get("due_date"):
+-                    logger.info(f"[VERBOSE]       Due: {todo['due_date']}")
++                    _logger.logger.info(f"[VERBOSE]       Due: {todo['due_date']}")
+ 
+-            logger.info("[VERBOSE] ===== END TODO LIST =====")
+-            logger.info("")
++            _logger.logger.info("[VERBOSE] ===== END TODO LIST =====")
++            _logger.logger.info("")
+         else:
+-            logger.info("[VERBOSE] No todos found in session storage")
++            _logger.logger.info("[VERBOSE] No todos found in session storage")
+ 
+     except Exception as e:
+-        logger.warning(f"[VERBOSE] Could not retrieve todos: {e}")
++        _logger.logger.warning(f"[VERBOSE] Could not retrieve todos: {e}")
+ 
+ 
+ def setup_logging(verbose: bool = False) -> None:
+@@ -220,18 +246,8 @@ def setup_logging(verbose: bool = False) -> None:
+     Args:
+         verbose: Enable debug level logging
+     """
+-    log_level = logging.DEBUG if verbose else logging.INFO
+-    log_format = "%(asctime)s [%(levelname)-8s] %(name)s: %(message)s"
+-    date_format = "%H:%M:%S"
+-
+-    logging.basicConfig(
+-        level=log_level, format=log_format, datefmt=date_format, stream=sys.stdout, force=True
+-    )
+-
+-    from dawn_kestrel.core.settings import settings
+-
+-    if settings.debug:
+-        logging.getLogger().setLevel(logging.DEBUG)
++    global _logger
++    _logger = ReviewLogger.get(verbose=verbose)
+ 
+ 
+ def get_subagents(include_optional: bool = False) -> list[object]:
+@@ -390,19 +406,6 @@ def review(
+             names = ", ".join(sorted(available_agents))
+             raise click.ClickException(f"Unknown agent '{agent}'. Available agents: {names}")
+ 
+-        # Register security agent in shared AgentRegistry for AgentRuntime execution
+-        SECURITY_REVIEWER_AGENT = Agent(
+-            name="security",
+-            description="Security reviewer with tool execution support",
+-            mode="subagent",
+-            native=False,
+-            permission=[
+-                {"permission": "todowrite", "pattern": "*", "action": "allow"},
+-                {"permission": "todoread", "pattern": "*", "action": "allow"},
+-                {"permission": "*", "pattern": "*", "action": "deny"},
+-            ],
+-        )
+-
+         if agent:
+             subagents = [ReviewerRegistry.create_reviewer(agent)]
+             console.print(f"[cyan]Running only '{agent}' agent...[/cyan]")
+@@ -416,8 +419,6 @@ def review(
+         session_manager = EphemeralSessionManager()
+         agent_registry = create_agent_registry()
+ 
+-        await agent_registry.register_agent(SECURITY_REVIEWER_AGENT)
+-
+         orchestrator = PRReviewOrchestrator(
+             subagents=subagents,
+             use_agent_runtime=True,

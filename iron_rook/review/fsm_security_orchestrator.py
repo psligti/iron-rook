@@ -10,6 +10,8 @@ The orchestrator uses dawn-kestrel's AgentRuntime for subagent execution.
 
 from __future__ import annotations
 
+import pydantic as pd
+
 # Patch dawn-kestrel get_settings() to always return to first loaded instance
 import dawn_kestrel.core.settings as settings_module
 
@@ -47,6 +49,65 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class PhaseContext:
+    """Typed context for phase handoffs - validates required fields before phase transitions."""
+
+    def __init__(
+        self,
+        pr: Optional[PullRequestChangeList] = None,
+        pr_dict: Optional[Dict[str, Any]] = None,
+        changes_list: Optional[List[Dict[str, Any]]] = None,
+        intake_output: Optional[Dict[str, Any]] = None,
+        plan_todos_output: Optional[Dict[str, Any]] = None,
+        delegate_output: Optional[Dict[str, Any]] = None,
+        collect_output: Optional[Dict[str, Any]] = None,
+        consolidate_output: Optional[Dict[str, Any]] = None,
+        todos: Optional[List[Any]] = None,
+    ) -> None:
+        """Initialize phase context with typed fields."""
+        self.pr = pr
+        self.pr_dict = pr_dict
+        self.changes_list = changes_list
+        self.intake_output = intake_output
+        self.plan_todos_output = plan_todos_output
+        self.delegate_output = delegate_output
+        self.collect_output = collect_output
+        self.consolidate_output = consolidate_output
+        self.todos = todos or []
+
+    def validate_for_phase(self, phase: str) -> None:
+        """Validate that required fields exist for the specified phase.
+
+        Args:
+            phase: FSM phase name
+
+        Raises:
+            MissingPhaseContextError: If required fields are missing
+        """
+        required_fields: Dict[str, List[str]] = {
+            "intake": ["pr_dict", "changes_list"],
+            "plan_todos": ["pr_dict", "changes_list", "intake_output"],
+            "delegate": ["pr_dict", "todos"],
+            "collect": ["pr_dict", "delegate_output", "todos"],
+            "consolidate": ["pr_dict", "collect_output", "todos"],
+            "evaluate": ["pr_dict", "consolidate_output", "todos"],
+        }
+
+        if phase not in required_fields:
+            raise ValueError(f"Unknown phase: {phase}")
+
+        missing_fields = []
+        for field in required_fields[phase]:
+            if not hasattr(self, field) or getattr(self, field) is None:
+                missing_fields.append(field)
+
+        if missing_fields:
+            raise MissingPhaseContextError(
+                f"Missing required fields for phase '{phase}': {', '.join(missing_fields)}. "
+                f"Required fields: {', '.join(required_fields[phase])}"
+            )
+
+
 class FSMPhaseError(Exception):
     """Error raised when FSM phase transition is invalid."""
 
@@ -67,6 +128,12 @@ class InvalidPhaseOutputError(Exception):
 
 class MissingPhasePromptError(Exception):
     """Error raised when phase prompt section is missing or empty in agent prompt file."""
+
+    pass
+
+
+class MissingPhaseContextError(Exception):
+    """Error raised when required fields are missing from phase context data."""
 
     pass
 
@@ -137,6 +204,29 @@ class SecurityReviewOrchestrator:
                 f"subagents={self.state.subagents_used}"
             )
 
+    def _validate_phase_context(self, phase: str, context_data: Dict[str, Any]) -> None:
+        """Validate that required fields exist for the specified phase.
+
+        Args:
+            phase: FSM phase name
+            context_data: Context data dictionary to validate
+
+        Raises:
+            MissingPhaseContextError: If required fields are missing
+        """
+        phase_context = PhaseContext(
+            pr=self.pr_input,
+            pr_dict=context_data.get("pr"),
+            changes_list=context_data.get("changes"),
+            intake_output=context_data.get("intake_output"),
+            plan_todos_output=context_data.get("plan_todos_output"),
+            delegate_output=context_data.get("delegate_output"),
+            collect_output=context_data.get("collect_output"),
+            consolidate_output=context_data.get("consolidate_output"),
+            todos=self.todos,
+        )
+        phase_context.validate_for_phase(phase)
+
     def _validate_phase_transition(self, to_phase: str, output_data: Dict[str, Any]) -> None:
         """Validate that phase transition is valid for current state.
 
@@ -170,6 +260,106 @@ class SecurityReviewOrchestrator:
         logger.debug(
             f"Validated transition: {from_phase} → {to_phase}, "
             f"next_phase_request={output_data.get('next_phase_request')}"
+        )
+
+    def _transition_to_phase(self, next_phase_request: Optional[str]) -> None:
+        """Transition to next phase with validation and state updates.
+
+        This method ensures:
+        - next_phase_request is validated against FSM_TRANSITIONS
+        - self.state.phase is updated atomically
+        - self.state.iterations is incremented appropriately
+        - self.state.stop_reason is set for stop gates
+        - Unexpected/invalid requests raise FSMPhaseError
+
+        Args:
+            next_phase_request: Next phase requested by LLM output
+
+        Raises:
+            FSMPhaseError: If transition is invalid or request is unexpected
+        """
+        from_phase = self.state.phase
+
+        # Handle None requests - invalid
+        if next_phase_request is None:
+            error_msg = (
+                f"Phase {from_phase} returned None for next_phase_request. "
+                f"Expected one of: plan_todos, delegate, collect, consolidate, evaluate, done, stopped_budget, stopped_human"
+            )
+            logger.error(error_msg)
+            raise FSMPhaseError(error_msg)
+
+        # Validate next_phase_request type - must be string
+        if not isinstance(next_phase_request, str):
+            error_msg = (
+                f"Phase {from_phase} returned invalid type for next_phase_request: {type(next_phase_request)}. "
+                f"Expected string. Value: {next_phase_request!r}"
+            )
+            logger.error(error_msg)
+            raise FSMPhaseError(error_msg)
+
+        # Validate next_phase_request is a valid phase value
+        valid_phases = {
+            "intake",
+            "plan_todos",
+            "delegate",
+            "collect",
+            "consolidate",
+            "evaluate",
+            "done",
+            "stopped_budget",
+            "stopped_human",
+        }
+        if next_phase_request not in valid_phases:
+            error_msg = (
+                f"Phase {from_phase} returned unexpected next_phase_request: {next_phase_request!r}. "
+                f"Valid values: {sorted(valid_phases)}"
+            )
+            logger.error(error_msg)
+            raise FSMPhaseError(error_msg)
+
+        # Handle stop states - these are terminal but not part of FSM_TRANSITIONS
+        if next_phase_request in ("stopped_budget", "stopped_human"):
+            self.state.phase = next_phase_request
+            self.state.stop_reason = next_phase_request
+            logger.info(f"FSM transitioned to stop state: {next_phase_request}")
+            return
+
+        # Handle done - terminal state, validate against FSM_TRANSITIONS
+        if next_phase_request == "done":
+            # Check if current phase allows transition to done
+            allowed_from = FSM_TRANSITIONS.get(from_phase, [])
+            if "done" not in allowed_from and from_phase != "done":
+                error_msg = (
+                    f"Invalid transition from {from_phase} to done. "
+                    f"Valid transitions from {from_phase}: {allowed_from}"
+                )
+                logger.error(error_msg)
+                raise FSMPhaseError(error_msg)
+            self.state.phase = "done"
+            self.state.stop_reason = "done"
+            logger.info(f"FSM completed successfully: {from_phase} → done")
+            return
+
+        # Validate regular phase transition against FSM_TRANSITIONS
+        allowed_from = FSM_TRANSITIONS.get(from_phase, [])
+        if next_phase_request not in allowed_from:
+            error_msg = (
+                f"Invalid transition from {from_phase} to {next_phase_request}. "
+                f"Valid transitions from {from_phase}: {allowed_from}"
+            )
+            logger.error(error_msg)
+            raise FSMPhaseError(error_msg)
+
+        # Transition is valid - update state
+        self.state.phase = next_phase_request
+
+        # Increment iterations counter on transitions (not on initialization)
+        if from_phase != "intake":
+            self.state.iterations += 1
+
+        logger.info(
+            f"FSM transition: {from_phase} → {next_phase_request}, iterations={self.state.iterations}"
         )
 
     def _load_phase_prompt(self, phase: str) -> str:
@@ -219,60 +409,31 @@ class SecurityReviewOrchestrator:
         return phase_prompt
 
     def _construct_phase_user_message(self, phase: str, context_data: Dict[str, Any]) -> str:
-        """Construct the user message for a given FSM phase.
+        """Construct user message for a given FSM phase.
 
         Args:
             phase: FSM phase name
-            context_data: Context data for the phase
+            context_data: Context data for phase
 
         Returns:
             User message as JSON string
         """
-        user_data = context_data.get(phase, {})
+        pr_dict = context_data.get("pr")
+        changes_list = context_data.get("changes")
 
         if phase == "intake":
             return json.dumps(
                 {
-                    "pr": {
-                        "id": self.pr_input.pr.id,
-                        "title": self.pr_input.pr.title,
-                        "base_branch": self.pr_input.pr.base_branch,
-                        "head_branch": self.pr_input.pr.head_branch,
-                        "author": self.pr_input.pr.author,
-                        "url": self.pr_input.pr.url,
-                    },
-                    "changes": [
-                        {
-                            "path": change.path,
-                            "change_type": change.change_type,
-                            "diff_summary": change.diff_summary,
-                            "risk_hints": change.risk_hints,
-                        }
-                        for change in self.pr_input.changes
-                    ],
+                    "pr": pr_dict,
+                    "changes": changes_list,
                 }
             )
 
         elif phase == "plan_todos":
             return json.dumps(
                 {
-                    "pr": {
-                        "id": self.pr_input.pr.id,
-                        "title": self.pr_input.pr.title,
-                        "base_branch": self.pr_input.pr.base_branch,
-                        "head_branch": self.pr_input.pr.head_branch,
-                        "author": self.pr_input.pr.author,
-                        "url": self.pr_input.pr.url,
-                    },
-                    "changes": [
-                        {
-                            "path": change.path,
-                            "change_type": change.change_type,
-                            "diff_summary": change.diff_summary,
-                            "risk_hints": change.risk_hints,
-                        }
-                        for change in self.pr_input.changes
-                    ],
+                    "pr": pr_dict,
+                    "changes": changes_list,
                     "intake_output": context_data.get("intake_output", {}),
                 }
             )
@@ -280,14 +441,7 @@ class SecurityReviewOrchestrator:
         elif phase == "delegate":
             return json.dumps(
                 {
-                    "pr": {
-                        "id": self.pr_input.pr.id,
-                        "title": self.pr_input.pr.title,
-                        "base_branch": self.pr_input.pr.base_branch,
-                        "head_branch": self.pr_input.pr.head_branch,
-                        "author": self.pr_input.pr.author,
-                        "url": self.pr_input.pr.url,
-                    },
+                    "pr": pr_dict,
                     "todos": [todo.model_dump() for todo in self.todos],
                 }
             )
@@ -296,14 +450,7 @@ class SecurityReviewOrchestrator:
             delegate_output = context_data.get("delegate_output", {})
             return json.dumps(
                 {
-                    "pr": {
-                        "id": self.pr_input.pr.id,
-                        "title": self.pr_input.pr.title,
-                        "base_branch": self.pr_input.pr.base_branch,
-                        "head_branch": self.pr_input.pr.head_branch,
-                        "author": self.pr_input.pr.author,
-                        "url": self.pr_input.pr.url,
-                    },
+                    "pr": pr_dict,
                     "delegate_output": delegate_output,
                     "todos": [todo.model_dump() for todo in self.todos],
                 }
@@ -313,14 +460,7 @@ class SecurityReviewOrchestrator:
             consolidate_output = context_data.get("consolidate_output", {})
             return json.dumps(
                 {
-                    "pr": {
-                        "id": self.pr_input.pr.id,
-                        "title": self.pr_input.pr.title,
-                        "base_branch": self.pr_input.pr.base_branch,
-                        "head_branch": self.pr_input.pr.head_branch,
-                        "author": self.pr_input.pr.author,
-                        "url": self.pr_input.pr.url,
-                    },
+                    "pr": pr_dict,
                     "consolidate_output": consolidate_output,
                     "todos": [todo.model_dump() for todo in self.todos],
                 }
@@ -330,14 +470,7 @@ class SecurityReviewOrchestrator:
             consolidate_output = context_data.get("consolidate_output", {})
             return json.dumps(
                 {
-                    "pr": {
-                        "id": self.pr_input.pr.id,
-                        "title": self.pr_input.pr.title,
-                        "base_branch": self.pr_input.pr.base_branch,
-                        "head_branch": self.pr_input.pr.head_branch,
-                        "author": self.pr_input.pr.author,
-                        "url": self.pr_input.pr.url,
-                    },
+                    "pr": pr_dict,
                     "consolidate_output": consolidate_output,
                     "todos": [todo.model_dump() for todo in self.todos],
                 }
@@ -636,6 +769,7 @@ class SecurityReviewOrchestrator:
             ],
         }
 
+        self._validate_phase_context("intake", context_data)
         intake_output = await self._execute_phase("intake", context_data)
 
         if intake_output is None:
@@ -656,16 +790,13 @@ class SecurityReviewOrchestrator:
             logger.error(f"Intake output that failed validation: {intake_output}")
             return self._build_partial_report("intake_validation_failed")
 
-        self.state.phase = phase_output.next_phase_request or "plan_todos"
-        logger.debug(f"State phase set to: {self.state.phase}")
+        self._transition_to_phase(phase_output.next_phase_request)
 
-        if self.state.phase == "stopped_budget" or self.state.phase == "stopped_human":
+        if self.state.phase in ("stopped_budget", "stopped_human"):
             return self._build_partial_report("stopped_by_gate")
 
-        plan_todos_output = await self._execute_phase(
-            "plan_todos",
-            {"todos": [todo.model_dump() for todo in self.todos]},
-        )
+        self._validate_phase_context("plan_todos", context_data)
+        plan_todos_output = await self._execute_phase("plan_todos", context_data)
 
         if plan_todos_output is None:
             return self._build_partial_report("plan_todos_failed")
@@ -673,8 +804,7 @@ class SecurityReviewOrchestrator:
         context_data["plan_todos_output"] = plan_todos_output
 
         phase_output = PhaseOutput.model_validate(plan_todos_output)
-        self.state.phase = phase_output.next_phase_request or "collect"
-        logger.debug(f"State phase set to: {self.state.phase}")
+        self._transition_to_phase(phase_output.next_phase_request)
 
         # Populate self.todos from plan_todos output
         plan_todos_data = phase_output.data.get("todos", [])
@@ -682,9 +812,10 @@ class SecurityReviewOrchestrator:
 
         while self.state.phase not in ("done", "stopped_budget", "stopped_human"):
             if self.state.phase == "delegate":
+                self._validate_phase_context("delegate", context_data)
                 delegate_output = await self._execute_phase(
                     "delegate",
-                    {"todos": [todo.model_dump() for todo in self.todos]},
+                    context_data,
                 )
                 if delegate_output is None:
                     return self._build_partial_report("delegate_failed")
@@ -692,12 +823,10 @@ class SecurityReviewOrchestrator:
                 phase_output = PhaseOutput.model_validate(delegate_output)
 
             elif self.state.phase == "collect":
+                self._validate_phase_context("collect", context_data)
                 collect_output = await self._execute_phase(
                     "collect",
-                    {
-                        "delegate_output": context_data.get("delegate_output", plan_todos_output),
-                        "todos": [todo.model_dump() for todo in self.todos],
-                    },
+                    context_data,
                 )
                 if collect_output is None:
                     return self._build_partial_report("collect_failed")
@@ -705,12 +834,10 @@ class SecurityReviewOrchestrator:
                 phase_output = PhaseOutput.model_validate(collect_output)
 
             elif self.state.phase == "consolidate":
+                self._validate_phase_context("consolidate", context_data)
                 consolidate_output = await self._execute_phase(
                     "consolidate",
-                    {
-                        "collect_output": context_data.get("collect_output", {}),
-                        "todos": [todo.model_dump() for todo in self.todos],
-                    },
+                    context_data,
                 )
                 if consolidate_output is None:
                     return self._build_partial_report("consolidate_failed")
@@ -718,12 +845,10 @@ class SecurityReviewOrchestrator:
                 phase_output = PhaseOutput.model_validate(consolidate_output)
 
             elif self.state.phase == "evaluate":
+                self._validate_phase_context("evaluate", context_data)
                 evaluate_output = await self._execute_phase(
                     "evaluate",
-                    {
-                        "consolidate_output": context_data.get("consolidate_output", {}),
-                        "todos": [todo.model_dump() for todo in self.todos],
-                    },
+                    context_data,
                 )
                 if evaluate_output is None:
                     return self._build_partial_report("evaluate_failed")
@@ -734,8 +859,7 @@ class SecurityReviewOrchestrator:
                 logger.error(f"Unknown phase: {self.state.phase}")
                 return self._build_partial_report(f"unknown_phase_{self.state.phase}")
 
-            self.state.phase = phase_output.next_phase_request or "done"
-            logger.debug(f"State phase set to: {self.state.phase}")
+            self._transition_to_phase(phase_output.next_phase_request)
 
         self.state.stop_reason = self.state.phase
         return self._build_final_report(context_data)

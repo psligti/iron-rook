@@ -1,0 +1,48 @@
+Task 8: Fix security CLI continuity path (single execution, correct wiring)
+
+ISSUE ANALYSIS:
+===============
+
+The CLI had a duplicate/unnecessary registration pattern:
+
+1. SECURITY_REVIEWER_AGENT was being registered in AgentRegistry (lines 410-420, 435)
+2. But this agent was NEVER used because:
+   - SecurityReviewer.prefers_direct_review() returns True (from agents/security.py:45)
+   - PRReviewOrchestrator checks "if self.use_agent_runtime and not prefers_direct_review()" (orchestrator.py:195)
+   - When prefers_direct_review() is True, the agent takes the direct path: agent.review(context)
+   - AgentRuntime path is bypassed entirely for security agent
+
+3. The SECURITY_REVIEWER_AGENT registration was effectively dead code - always created, never used
+
+SECURITY PATH EXECUTION FLOW:
+============================
+
+When user runs: iron-rook review --agent security
+
+BEFORE FIX:
+1. CLI creates SECURITY_REVIEWER_AGENT (Agent instance)
+2. CLI registers it in agent_registry
+3. CLI creates PRReviewOrchestrator with use_agent_runtime=True
+4. Orchestrator gets SecurityReviewer from registry
+5. SecurityReviewer.prefers_direct_review() returns True
+6. Orchestrator calls SecurityReviewer.review(context) directly
+7. AgentRuntime is NEVER used for security
+8. SECURITY_REVIEWER_AGENT registration is WASTED
+
+AFTER FIX:
+1. CLI does NOT create SECURITY_REVIEWER_AGENT (removed dead code)
+2. CLI does NOT register it (removed unnecessary registration)
+3. CLI creates PRReviewOrchestrator with use_agent_runtime=True
+4. Orchestrator gets SecurityReviewer from registry
+5. SecurityReviewer.prefers_direct_review() returns True
+6. Orchestrator calls SecurityReviewer.review(context) directly
+7. No duplicate/unnecessary code
+
+FUTURE WORK:
+=============
+To properly integrate FSM security orchestrator with CLI and use AgentRuntime:
+- Create SecurityFSMReviewer class that extends BaseReviewerAgent
+- Wrap SecurityReviewOrchestrator within that class
+- Implement prefers_direct_review() to return False (to use AgentRuntime)
+- Register SecurityFSMReviewer in registry instead of deprecated SecurityReviewer
+
