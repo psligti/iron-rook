@@ -1,0 +1,416 @@
+FF..F                                                                    [100%]
+=================================== FAILURES ===================================
+_ TestFSMReliabilityRedBaseline.test_invalid_transition_request_fails_deterministically _
+
+self = <iron_rook.review.fsm_security_orchestrator.SecurityReviewOrchestrator object at 0x1138c9940>
+pr_input = PullRequestChangeList(pr=PullRequestMetadata(id='1234', title='Test PR', base_branch='main', head_branch='feature/test...890', created_at='2026-02-09T18:00:00Z'), constraints=PRConstraints(tool_budget=25, max_subagents=5, max_iterations=4))
+
+    async def run_review(self, pr_input: PullRequestChangeList) -> SecurityReviewReport:
+        """Run the full FSM security review.
+    
+        Args:
+            pr_input: PullRequestChangeList with PR metadata, changes, and constraints
+    
+        Returns:
+            SecurityReviewReport with consolidated findings and risk assessment
+    
+        Raises:
+            BudgetExceededError: If execution budget is exceeded
+            FSMPhaseError: If phase transition is invalid
+        """
+        logger.info(
+            f"Starting FSM Security Review for PR {pr_input.pr.id}: "
+            f"'{pr_input.pr.title}' with {len(pr_input.changes)} changed files"
+        )
+    
+        self.pr_input = pr_input
+    
+        phase_output = PhaseOutput(phase="intake", data={})
+        context_data = {
+            "pr": {
+                "id": pr_input.pr.id,
+                "title": pr_input.pr.title,
+                "base_branch": pr_input.pr.base_branch,
+                "head_branch": pr_input.pr.head_branch,
+                "author": pr_input.pr.author,
+                "url": pr_input.pr.url,
+            },
+            "changes": [
+                {
+                    "path": change.path,
+                    "change_type": change.change_type,
+                    "diff_summary": change.diff_summary,
+                    "risk_hints": change.risk_hints,
+                }
+                for change in pr_input.changes
+            ],
+        }
+    
+        intake_output = await self._execute_phase("intake", context_data)
+    
+        if intake_output is None:
+            logger.error("Intake phase returned None - LLM execution failed")
+            return self._build_partial_report("intake_failed")
+    
+        logger.debug(f"Intake output type: {type(intake_output)}, content: {intake_output}")
+    
+        context_data["intake_output"] = intake_output
+    
+        try:
+>           phase_output = PhaseOutput.model_validate(intake_output)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PhaseOutput
+E           phase
+E             Input should be 'intake', 'plan_todos', 'delegate', 'collect', 'consolidate' or 'evaluate' [type=literal_error, input_value='done', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/literal_error
+
+iron_rook/review/fsm_security_orchestrator.py:650: ValidationError
+
+During handling of the above exception, another exception occurred:
+
+self = <test_fsm_orchestrator.TestFSMReliabilityRedBaseline object at 0x11383b5f0>
+mock_session_manager = <MagicMock id='4622945216'>
+sample_pr_input = PullRequestChangeList(pr=PullRequestMetadata(id='1234', title='Test PR', base_branch='main', head_branch='feature/test...890', created_at='2026-02-09T18:00:00Z'), constraints=PRConstraints(tool_budget=25, max_subagents=5, max_iterations=4))
+
+    @pytest.mark.asyncio
+    async def test_invalid_transition_request_fails_deterministically(
+        self: "TestFSMReliabilityRedBaseline",
+        mock_session_manager: object,
+        sample_pr_input: PullRequestChangeList,
+    ) -> None:
+        """Test that invalid phase transitions fail deterministically with explicit error.
+    
+        RED: This test expects the orchestrator to validate transitions against FSM_TRANSITIONS
+        and raise FSMPhaseError for invalid transitions. Currently, the orchestrator does
+        not validate transitions and may silently accept invalid transitions or fail with unclear errors.
+        """
+        orchestrator = SecurityReviewOrchestrator(
+            agent_runtime=None,
+            session_manager=mock_session_manager,
+            prompt_path=None,
+        )
+    
+        from iron_rook.review.fsm_security_orchestrator import FSMPhaseError
+    
+        # Mock the direct LLM response with invalid transition
+        import json
+        import sys
+    
+        async def mock_llm_complete(*args: object, **kwargs: object) -> object:
+            """Mock that returns invalid transition from intake."""
+            if args and len(args) > 1 and "messages" in str(args[1]):
+                if "phase: 1" in str(args[1]):
+                    # Return invalid transition from intake (should go to plan_todos, not evaluate)
+                    from unittest.mock import MagicMock
+    
+                    response = MagicMock()
+                    response.text = (
+                        '{"phase": "intake", "data": {}, "next_phase_request": "evaluate"}'
+                    )
+                    return response
+            # Default response for other phases
+            from unittest.mock import MagicMock
+    
+            response = MagicMock()
+            response.text = '{"phase": "done", "data": {}}'
+            return response
+    
+        # Monkey-patch the LLMClient
+        import dawn_kestrel.llm
+    
+        original_complete = dawn_kestrel.llm.LLMClient.complete
+        dawn_kestrel.llm.LLMClient.complete = mock_llm_complete
+    
+        try:
+            # The orchestrator should reject invalid transition intake -> evaluate
+            # Currently it does NOT validate, so this will NOT raise FSMPhaseError (RED state)
+>           result = await orchestrator.run_review(sample_pr_input)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_fsm_orchestrator.py:347: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <iron_rook.review.fsm_security_orchestrator.SecurityReviewOrchestrator object at 0x1138c9940>
+pr_input = PullRequestChangeList(pr=PullRequestMetadata(id='1234', title='Test PR', base_branch='main', head_branch='feature/test...890', created_at='2026-02-09T18:00:00Z'), constraints=PRConstraints(tool_budget=25, max_subagents=5, max_iterations=4))
+
+    async def run_review(self, pr_input: PullRequestChangeList) -> SecurityReviewReport:
+        """Run the full FSM security review.
+    
+        Args:
+            pr_input: PullRequestChangeList with PR metadata, changes, and constraints
+    
+        Returns:
+            SecurityReviewReport with consolidated findings and risk assessment
+    
+        Raises:
+            BudgetExceededError: If execution budget is exceeded
+            FSMPhaseError: If phase transition is invalid
+        """
+        logger.info(
+            f"Starting FSM Security Review for PR {pr_input.pr.id}: "
+            f"'{pr_input.pr.title}' with {len(pr_input.changes)} changed files"
+        )
+    
+        self.pr_input = pr_input
+    
+        phase_output = PhaseOutput(phase="intake", data={})
+        context_data = {
+            "pr": {
+                "id": pr_input.pr.id,
+                "title": pr_input.pr.title,
+                "base_branch": pr_input.pr.base_branch,
+                "head_branch": pr_input.pr.head_branch,
+                "author": pr_input.pr.author,
+                "url": pr_input.pr.url,
+            },
+            "changes": [
+                {
+                    "path": change.path,
+                    "change_type": change.change_type,
+                    "diff_summary": change.diff_summary,
+                    "risk_hints": change.risk_hints,
+                }
+                for change in pr_input.changes
+            ],
+        }
+    
+        intake_output = await self._execute_phase("intake", context_data)
+    
+        if intake_output is None:
+            logger.error("Intake phase returned None - LLM execution failed")
+            return self._build_partial_report("intake_failed")
+    
+        logger.debug(f"Intake output type: {type(intake_output)}, content: {intake_output}")
+    
+        context_data["intake_output"] = intake_output
+    
+        try:
+            phase_output = PhaseOutput.model_validate(intake_output)
+            logger.debug(
+                f"PhaseOutput validated successfully: phase={phase_output.phase}, next_phase_request={phase_output.next_phase_request}"
+            )
+>       except pd.ValidationError as e:
+               ^^
+E       NameError: name 'pd' is not defined
+
+iron_rook/review/fsm_security_orchestrator.py:654: NameError
+_ TestFSMReliabilityRedBaseline.test_missing_required_phase_fields_do_not_silently_continue _
+
+self = <iron_rook.review.fsm_security_orchestrator.SecurityReviewOrchestrator object at 0x113908d70>
+pr_input = PullRequestChangeList(pr=PullRequestMetadata(id='1234', title='Test PR', base_branch='main', head_branch='feature/test...890', created_at='2026-02-09T18:00:00Z'), constraints=PRConstraints(tool_budget=25, max_subagents=5, max_iterations=4))
+
+    async def run_review(self, pr_input: PullRequestChangeList) -> SecurityReviewReport:
+        """Run the full FSM security review.
+    
+        Args:
+            pr_input: PullRequestChangeList with PR metadata, changes, and constraints
+    
+        Returns:
+            SecurityReviewReport with consolidated findings and risk assessment
+    
+        Raises:
+            BudgetExceededError: If execution budget is exceeded
+            FSMPhaseError: If phase transition is invalid
+        """
+        logger.info(
+            f"Starting FSM Security Review for PR {pr_input.pr.id}: "
+            f"'{pr_input.pr.title}' with {len(pr_input.changes)} changed files"
+        )
+    
+        self.pr_input = pr_input
+    
+        phase_output = PhaseOutput(phase="intake", data={})
+        context_data = {
+            "pr": {
+                "id": pr_input.pr.id,
+                "title": pr_input.pr.title,
+                "base_branch": pr_input.pr.base_branch,
+                "head_branch": pr_input.pr.head_branch,
+                "author": pr_input.pr.author,
+                "url": pr_input.pr.url,
+            },
+            "changes": [
+                {
+                    "path": change.path,
+                    "change_type": change.change_type,
+                    "diff_summary": change.diff_summary,
+                    "risk_hints": change.risk_hints,
+                }
+                for change in pr_input.changes
+            ],
+        }
+    
+        intake_output = await self._execute_phase("intake", context_data)
+    
+        if intake_output is None:
+            logger.error("Intake phase returned None - LLM execution failed")
+            return self._build_partial_report("intake_failed")
+    
+        logger.debug(f"Intake output type: {type(intake_output)}, content: {intake_output}")
+    
+        context_data["intake_output"] = intake_output
+    
+        try:
+>           phase_output = PhaseOutput.model_validate(intake_output)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PhaseOutput
+E           phase
+E             Field required [type=missing, input_value={'data': {}, 'next_phase_request': 'plan_todos'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+iron_rook/review/fsm_security_orchestrator.py:650: ValidationError
+
+During handling of the above exception, another exception occurred:
+
+self = <test_fsm_orchestrator.TestFSMReliabilityRedBaseline object at 0x1138c85f0>
+mock_agent_runtime = <test_fsm_orchestrator.MockAgentRuntime object at 0x1138ffc50>
+mock_session_manager = <MagicMock id='4623169104'>
+sample_pr_input = PullRequestChangeList(pr=PullRequestMetadata(id='1234', title='Test PR', base_branch='main', head_branch='feature/test...890', created_at='2026-02-09T18:00:00Z'), constraints=PRConstraints(tool_budget=25, max_subagents=5, max_iterations=4))
+
+    @pytest.mark.asyncio
+    async def test_missing_required_phase_fields_do_not_silently_continue(
+        self: "TestFSMReliabilityRedBaseline",
+        mock_agent_runtime: MockAgentRuntime,
+        mock_session_manager: object,
+        sample_pr_input: PullRequestChangeList,
+    ) -> None:
+        """Test that missing required phase fields fail explicitly instead of silent continuation.
+    
+        RED: This test expects the orchestrator to validate required fields before phase
+        transitions. Currently, missing fields may cause silent failures or partial reports
+        without clear indication of what went wrong.
+        """
+        orchestrator = SecurityReviewOrchestrator(
+            agent_runtime=None,
+            session_manager=mock_session_manager,
+            prompt_path=None,
+        )
+    
+        # Mock a response missing required 'phase' field
+        from unittest.mock import MagicMock
+    
+        async def mock_llm_complete(*args: object, **kwargs: object) -> object:
+            """Mock that returns output missing required phase field."""
+            response = MagicMock()
+            response.text = '{"data": {}, "next_phase_request": "plan_todos"}'
+            return response
+    
+        # Monkey-patch the LLMClient
+        import dawn_kestrel.llm
+    
+        original_complete = dawn_kestrel.llm.LLMClient.complete
+        dawn_kestrel.llm.LLMClient.complete = mock_llm_complete
+    
+        try:
+            # Should fail explicitly with validation error or partial report with explicit reason
+>           result = await orchestrator.run_review(sample_pr_input)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_fsm_orchestrator.py:392: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <iron_rook.review.fsm_security_orchestrator.SecurityReviewOrchestrator object at 0x113908d70>
+pr_input = PullRequestChangeList(pr=PullRequestMetadata(id='1234', title='Test PR', base_branch='main', head_branch='feature/test...890', created_at='2026-02-09T18:00:00Z'), constraints=PRConstraints(tool_budget=25, max_subagents=5, max_iterations=4))
+
+    async def run_review(self, pr_input: PullRequestChangeList) -> SecurityReviewReport:
+        """Run the full FSM security review.
+    
+        Args:
+            pr_input: PullRequestChangeList with PR metadata, changes, and constraints
+    
+        Returns:
+            SecurityReviewReport with consolidated findings and risk assessment
+    
+        Raises:
+            BudgetExceededError: If execution budget is exceeded
+            FSMPhaseError: If phase transition is invalid
+        """
+        logger.info(
+            f"Starting FSM Security Review for PR {pr_input.pr.id}: "
+            f"'{pr_input.pr.title}' with {len(pr_input.changes)} changed files"
+        )
+    
+        self.pr_input = pr_input
+    
+        phase_output = PhaseOutput(phase="intake", data={})
+        context_data = {
+            "pr": {
+                "id": pr_input.pr.id,
+                "title": pr_input.pr.title,
+                "base_branch": pr_input.pr.base_branch,
+                "head_branch": pr_input.pr.head_branch,
+                "author": pr_input.pr.author,
+                "url": pr_input.pr.url,
+            },
+            "changes": [
+                {
+                    "path": change.path,
+                    "change_type": change.change_type,
+                    "diff_summary": change.diff_summary,
+                    "risk_hints": change.risk_hints,
+                }
+                for change in pr_input.changes
+            ],
+        }
+    
+        intake_output = await self._execute_phase("intake", context_data)
+    
+        if intake_output is None:
+            logger.error("Intake phase returned None - LLM execution failed")
+            return self._build_partial_report("intake_failed")
+    
+        logger.debug(f"Intake output type: {type(intake_output)}, content: {intake_output}")
+    
+        context_data["intake_output"] = intake_output
+    
+        try:
+            phase_output = PhaseOutput.model_validate(intake_output)
+            logger.debug(
+                f"PhaseOutput validated successfully: phase={phase_output.phase}, next_phase_request={phase_output.next_phase_request}"
+            )
+>       except pd.ValidationError as e:
+               ^^
+E       NameError: name 'pd' is not defined
+
+iron_rook/review/fsm_security_orchestrator.py:654: NameError
+_ TestFSMReliabilityRedBaseline.test_transition_validation_actually_enforces_fsm_transitions _
+
+self = <test_fsm_orchestrator.TestFSMReliabilityRedBaseline object at 0x1138c8f20>
+mock_agent_runtime = <test_fsm_orchestrator.MockAgentRuntime object at 0x11399f890>
+mock_session_manager = <MagicMock id='4623824944'>
+sample_pr_input = PullRequestChangeList(pr=PullRequestMetadata(id='1234', title='Test PR', base_branch='main', head_branch='feature/test...890', created_at='2026-02-09T18:00:00Z'), constraints=PRConstraints(tool_budget=25, max_subagents=5, max_iterations=4))
+
+    @pytest.mark.asyncio
+    async def test_transition_validation_actually_enforces_fsm_transitions(
+        self: "TestFSMReliabilityRedBaseline",
+        mock_agent_runtime: MockAgentRuntime,
+        mock_session_manager: object,
+        sample_pr_input: PullRequestChangeList,
+    ) -> None:
+        """Test that _validate_phase_transition actually enforces FSM_TRANSITIONS.
+    
+        RED: This test verifies that the transition validator exists and works correctly.
+        The orchestrator may currently bypass this validation.
+        """
+        orchestrator = SecurityReviewOrchestrator(
+            agent_runtime=None,
+            session_manager=mock_session_manager,
+            prompt_path=None,
+        )
+    
+        from iron_rook.review.fsm_security_orchestrator import FSMPhaseError
+    
+        # Test direct call to _validate_phase_transition with invalid transition
+        # This should be called during phase transitions
+        try:
+            orchestrator._validate_phase_transition("intake", {"next_phase_request": "evaluate"})
+            # If we reach here, validation is NOT enforced (RED state)
+>           pytest.fail("Expected FSMPhaseError for invalid transition intake -> evaluate")
+E           Failed: Expected FSMPhaseError for invalid transition intake -> evaluate
+
+tests/test_fsm_orchestrator.py:523: Failed
+=========================== short test summary info ============================
+FAILED tests/test_fsm_orchestrator.py::TestFSMReliabilityRedBaseline::test_invalid_transition_request_fails_deterministically - NameError: name 'pd' is not defined
+FAILED tests/test_fsm_orchestrator.py::TestFSMReliabilityRedBaseline::test_missing_required_phase_fields_do_not_silently_continue - NameError: name 'pd' is not defined
+FAILED tests/test_fsm_orchestrator.py::TestFSMReliabilityRedBaseline::test_transition_validation_actually_enforces_fsm_transitions - Failed: Expected FSMPhaseError for invalid transition intake -> evaluate
+3 failed, 2 passed in 0.18s
