@@ -1905,7 +1905,7 @@ python -m iron_rook review --help  # Expected: Help text shows successfully
 ```
 
 ### Final Checklist
-- [ ] All 11 reviewers preserved and working
+- [x] All 11 reviewers preserved and working
 - [ ] ReviewStreamManager, EntryPointDiscovery, BudgetTracker removed (files deleted)
 - [ ] Second-wave delegation removed
 - [ ] Dual execution paths removed (AgentRuntime only)
