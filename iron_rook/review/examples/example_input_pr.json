@@ -1,0 +1,40 @@
+{
+  "pr": {
+    "id": "1234",
+    "title": "Add auth middleware and token refresh",
+    "base_branch": "main",
+    "head_branch": "feature/auth-refresh",
+    "author": "alice",
+    "url": "https://github.com/example/repo/pull/1234"
+  },
+  "changes": [
+    {
+      "path": "src/auth/middleware.py",
+      "change_type": "modified",
+      "diff_summary": "Adds middleware to validate JWT and refresh tokens",
+      "risk_hints": ["auth", "tokens"]
+    },
+    {
+      "path": "src/auth/jwt.py",
+      "change_type": "modified",
+      "diff_summary": "Updates JWT verification with JWKS caching",
+      "risk_hints": ["crypto", "cache"]
+    },
+    {
+      "path": "src/config/security.yml",
+      "change_type": "added",
+      "diff_summary": "Adds security configuration for token validation",
+      "risk_hints": ["config"]
+    }
+  ],
+  "metadata": {
+    "repo": "myrepo",
+    "commit_range": "abc1234..def5678",
+    "created_at": "2026-02-09T18:00:00Z"
+  },
+  "constraints": {
+    "tool_budget": 25,
+    "max_subagents": 5,
+    "max_iterations": 4
+  }
+}

@@ -3,6 +3,7 @@
 This module provides functionality for reviewers to learn new entry point patterns
 from PR reviews and stage them for manual approval before integration.
 """
+
 from __future__ import annotations
 from typing import List, Dict, Any, Optional
 from pathlib import Path
@@ -25,7 +26,7 @@ class PatternLearning:
     4. Developer calls commit_learned_patterns() to merge into main doc
     """
 
-    def __init__(self, docs_dir: Optional[Path] = None):
+    def __init__(self, docs_dir: Optional[Path] = None) -> None:
         """Initialize PatternLearning.
 
         Args:
@@ -35,11 +36,7 @@ class PatternLearning:
             docs_dir = Path(__file__).parents[4] / "docs" / "reviewers"
         self.docs_dir = Path(docs_dir)
 
-    def add_learned_pattern(
-        self,
-        agent_name: str,
-        pattern: Dict[str, Any]
-    ) -> bool:
+    def add_learned_pattern(self, agent_name: str, pattern: Dict[str, Any]) -> bool:
         """Add a learned pattern to the staged list for an agent.
 
         Args:
@@ -79,8 +76,9 @@ class PatternLearning:
 
             # Check for duplicates (same type + pattern)
             for existing in staged_patterns:
-                if (existing.get('type') == pattern.get('type') and
-                    existing.get('pattern') == pattern.get('pattern')):
+                if existing.get("type") == pattern.get("type") and existing.get(
+                    "pattern"
+                ) == pattern.get("pattern"):
                     logger.info(f"Pattern already staged for {agent_name}: {pattern['pattern']}")
                     return False
 
@@ -139,7 +137,7 @@ class PatternLearning:
                 return False, f"Main documentation not found: {main_doc_path}"
 
             # Load main doc content
-            content = main_doc_path.read_text(encoding='utf-8')
+            content = main_doc_path.read_text(encoding="utf-8")
 
             # Extract existing patterns from YAML frontmatter
             existing_patterns = self.load_patterns_from_doc(agent_name, main_doc_path)
@@ -151,7 +149,7 @@ class PatternLearning:
             updated_content = self._update_yaml_frontmatter(content, merged_patterns)
 
             # Save updated main doc
-            main_doc_path.write_text(updated_content, encoding='utf-8')
+            main_doc_path.write_text(updated_content, encoding="utf-8")
 
             # Clear staged patterns file
             staged_file = self._get_staged_file_path(agent_name)
@@ -167,11 +165,7 @@ class PatternLearning:
             logger.error(f"Failed to commit patterns for {agent_name}: {e}")
             return False, f"Error committing patterns for {agent_name}: {str(e)}"
 
-    def load_patterns_from_doc(
-        self,
-        agent_name: str,
-        doc_path: Path
-    ) -> List[Dict[str, Any]]:
+    def load_patterns_from_doc(self, agent_name: str, doc_path: Path) -> List[Dict[str, Any]]:
         """Load patterns from agent documentation YAML frontmatter.
 
         Args:
@@ -193,10 +187,10 @@ class PatternLearning:
                 logger.warning(f"Documentation file not found: {doc_path}")
                 return []
 
-            content = doc_path.read_text(encoding='utf-8')
+            content = doc_path.read_text(encoding="utf-8")
 
             # Extract YAML frontmatter
-            frontmatter_match = re.search(r'^---\n(.*?)\n---', content, re.DOTALL)
+            frontmatter_match = re.search(r"^---\n(.*?)\n---", content, re.DOTALL)
             if not frontmatter_match:
                 logger.warning(f"No YAML frontmatter found in {doc_path}")
                 return []
@@ -208,35 +202,35 @@ class PatternLearning:
             in_patterns_section = False
             current_pattern = {}
 
-            for line in frontmatter_text.split('\n'):
+            for line in frontmatter_text.split("\n"):
                 stripped = line.strip()
 
-                if stripped.startswith('patterns:'):
+                if stripped.startswith("patterns:"):
                     in_patterns_section = True
                     continue
 
                 if in_patterns_section:
-                    if stripped.startswith('- type:'):
+                    if stripped.startswith("- type:"):
                         # Save previous pattern if exists
                         if current_pattern:
                             patterns.append(current_pattern)
                         # Start new pattern
-                        current_pattern = {'type': stripped.split('type:')[1].strip()}
-                    elif current_pattern and stripped.startswith('pattern:'):
+                        current_pattern = {"type": stripped.split("type:")[1].strip()}
+                    elif current_pattern and stripped.startswith("pattern:"):
                         # Extract pattern string (handle quotes)
-                        pattern_value = stripped.split('pattern:')[1].strip().strip('"\'')
-                        current_pattern['pattern'] = pattern_value
-                    elif current_pattern and stripped.startswith('language:'):
-                        current_pattern['language'] = stripped.split('language:')[1].strip()
-                    elif current_pattern and stripped.startswith('weight:'):
-                        weight_str = stripped.split('weight:')[1].strip()
-                        current_pattern['weight'] = float(weight_str)
-                    elif not stripped or stripped.startswith('heuristics:'):
+                        pattern_value = stripped.split("pattern:")[1].strip().strip("\"'")
+                        current_pattern["pattern"] = pattern_value
+                    elif current_pattern and stripped.startswith("language:"):
+                        current_pattern["language"] = stripped.split("language:")[1].strip()
+                    elif current_pattern and stripped.startswith("weight:"):
+                        weight_str = stripped.split("weight:")[1].strip()
+                        current_pattern["weight"] = float(weight_str)
+                    elif not stripped or stripped.startswith("heuristics:"):
                         # End of patterns section or empty line
                         if current_pattern:
                             patterns.append(current_pattern)
                             current_pattern = {}
-                        if stripped.startswith('heuristics:'):
+                        if stripped.startswith("heuristics:"):
                             in_patterns_section = False
 
             # Add last pattern if exists
@@ -276,30 +270,30 @@ class PatternLearning:
             return []
 
         try:
-            content = staged_file.read_text(encoding='utf-8')
+            content = staged_file.read_text(encoding="utf-8")
 
             # Parse simple YAML structure
             patterns = []
             current_pattern = {}
 
-            for line in content.split('\n'):
+            for line in content.split("\n"):
                 stripped = line.strip()
 
-                if stripped.startswith('- type:'):
+                if stripped.startswith("- type:"):
                     if current_pattern:
                         patterns.append(current_pattern)
-                    current_pattern = {'type': stripped.split('type:')[1].strip()}
-                elif current_pattern and stripped.startswith('pattern:'):
-                    pattern_value = stripped.split('pattern:')[1].strip().strip('"\'')
-                    current_pattern['pattern'] = pattern_value
-                elif current_pattern and stripped.startswith('language:'):
-                    current_pattern['language'] = stripped.split('language:')[1].strip()
-                elif current_pattern and stripped.startswith('weight:'):
-                    weight_str = stripped.split('weight:')[1].strip()
-                    current_pattern['weight'] = float(weight_str)
-                elif current_pattern and stripped.startswith('source:'):
-                    source_value = stripped.split('source:')[1].strip().strip('"\'')
-                    current_pattern['source'] = source_value
+                    current_pattern = {"type": stripped.split("type:")[1].strip()}
+                elif current_pattern and stripped.startswith("pattern:"):
+                    pattern_value = stripped.split("pattern:")[1].strip().strip("\"'")
+                    current_pattern["pattern"] = pattern_value
+                elif current_pattern and stripped.startswith("language:"):
+                    current_pattern["language"] = stripped.split("language:")[1].strip()
+                elif current_pattern and stripped.startswith("weight:"):
+                    weight_str = stripped.split("weight:")[1].strip()
+                    current_pattern["weight"] = float(weight_str)
+                elif current_pattern and stripped.startswith("source:"):
+                    source_value = stripped.split("source:")[1].strip().strip("\"'")
+                    current_pattern["source"] = source_value
                 elif not stripped and current_pattern:
                     patterns.append(current_pattern)
                     current_pattern = {}
@@ -313,11 +307,7 @@ class PatternLearning:
             logger.error(f"Failed to load staged patterns for {agent_name}: {e}")
             return []
 
-    def _save_staged_patterns(
-        self,
-        agent_name: str,
-        patterns: List[Dict[str, Any]]
-    ) -> None:
+    def _save_staged_patterns(self, agent_name: str, patterns: List[Dict[str, Any]]) -> None:
         """Save staged patterns to YAML file.
 
         Args:
@@ -328,30 +318,30 @@ class PatternLearning:
 
         # Build YAML content
         lines = [
-            f'# Staged patterns for {agent_name} reviewer',
-            '# These patterns await manual approval before integration',
-            '# To commit: python -m dawn_kestrel.agents.review.pattern_learning commit {agent_name}',
-            '',
-            'learned_patterns:'
+            f"# Staged patterns for {agent_name} reviewer",
+            "# These patterns await manual approval before integration",
+            "# To commit: python -m dawn_kestrel.agents.review.pattern_learning commit {agent_name}",
+            "",
+            "learned_patterns:",
         ]
 
         for pattern in patterns:
-            lines.append(f'  - type: {pattern["type"]}')
+            lines.append(f"  - type: {pattern['type']}")
             lines.append(f'    pattern: "{pattern["pattern"]}"')
-            if 'language' in pattern:
-                lines.append(f'    language: {pattern["language"]}')
-            if 'weight' in pattern:
-                lines.append(f'    weight: {pattern["weight"]}')
-            if 'source' in pattern:
+            if "language" in pattern:
+                lines.append(f"    language: {pattern['language']}")
+            if "weight" in pattern:
+                lines.append(f"    weight: {pattern['weight']}")
+            if "source" in pattern:
                 lines.append(f'    source: "{pattern["source"]}"')
 
-        content = '\n'.join(lines)
+        content = "\n".join(lines)
 
         # Ensure parent directory exists
         staged_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Write content
-        staged_file.write_text(content, encoding='utf-8')
+        staged_file.write_text(content, encoding="utf-8")
 
         logger.debug(f"Saved {len(patterns)} staged patterns to {staged_file}")
 
@@ -364,7 +354,7 @@ class PatternLearning:
         Returns:
             True if pattern is valid, False otherwise
         """
-        required_fields = ['type', 'pattern', 'weight']
+        required_fields = ["type", "pattern", "weight"]
 
         # Check required fields
         for field in required_fields:
@@ -372,31 +362,29 @@ class PatternLearning:
                 return False
 
         # Validate type
-        if pattern['type'] not in ['ast', 'file_path', 'content']:
+        if pattern["type"] not in ["ast", "file_path", "content"]:
             return False
 
         # Validate weight range
         try:
-            weight = float(pattern['weight'])
+            weight = float(pattern["weight"])
             if not (0.0 <= weight <= 1.0):
                 return False
         except (ValueError, TypeError):
             return False
 
         # Validate pattern string is not empty
-        if not pattern['pattern'] or not isinstance(pattern['pattern'], str):
+        if not pattern["pattern"] or not isinstance(pattern["pattern"], str):
             return False
 
         # For ast and content types, language is required
-        if pattern['type'] in ['ast', 'content'] and 'language' not in pattern:
+        if pattern["type"] in ["ast", "content"] and "language" not in pattern:
             return False
 
         return True
 
     def _merge_patterns(
-        self,
-        existing: List[Dict[str, Any]],
-        new: List[Dict[str, Any]]
+        self, existing: List[Dict[str, Any]], new: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """Merge existing patterns with new patterns.
 
@@ -410,25 +398,21 @@ class PatternLearning:
         merged = list(existing)
 
         # Track unique patterns by type + pattern combination
-        seen = {(p['type'], p['pattern']) for p in existing}
+        seen = {(p["type"], p["pattern"]) for p in existing}
 
         # Add new patterns that aren't duplicates
         for pattern in new:
-            key = (pattern['type'], pattern['pattern'])
+            key = (pattern["type"], pattern["pattern"])
             if key not in seen:
                 merged.append(pattern)
                 seen.add(key)
 
         # Sort by weight (descending)
-        merged.sort(key=lambda p: p.get('weight', 0.5), reverse=True)
+        merged.sort(key=lambda p: p.get("weight", 0.5), reverse=True)
 
         return merged
 
-    def _update_yaml_frontmatter(
-        self,
-        content: str,
-        new_patterns: List[Dict[str, Any]]
-    ) -> str:
+    def _update_yaml_frontmatter(self, content: str, new_patterns: List[Dict[str, Any]]) -> str:
         """Update YAML frontmatter with new patterns.
 
         Args:
@@ -439,7 +423,7 @@ class PatternLearning:
             Updated documentation content
         """
         # Extract YAML frontmatter
-        frontmatter_match = re.search(r'^(---\n.*?\n---)', content, re.DOTALL)
+        frontmatter_match = re.search(r"^(---\n.*?\n---)", content, re.DOTALL)
         if not frontmatter_match:
             logger.warning("No YAML frontmatter found, returning original content")
             return content
@@ -447,12 +431,12 @@ class PatternLearning:
         old_frontmatter = frontmatter_match.group(1)
 
         # Find patterns section in frontmatter
-        patterns_start = old_frontmatter.find('\npatterns:')
+        patterns_start = old_frontmatter.find("\npatterns:")
         if patterns_start == -1:
             logger.warning("No patterns section found, returning original content")
             return content
 
-        heuristics_start = old_frontmatter.find('\nheuristics:', patterns_start)
+        heuristics_start = old_frontmatter.find("\nheuristics:", patterns_start)
         if heuristics_start == -1:
             # No heuristics section, patterns goes to end
             patterns_end = len(old_frontmatter)
@@ -460,21 +444,21 @@ class PatternLearning:
             patterns_end = heuristics_start
 
         # Build new patterns section
-        new_patterns_lines = ['patterns:']
+        new_patterns_lines = ["patterns:"]
         for pattern in new_patterns:
-            new_patterns_lines.append(f'  - type: {pattern["type"]}')
+            new_patterns_lines.append(f"  - type: {pattern['type']}")
             new_patterns_lines.append(f'    pattern: "{pattern["pattern"]}"')
-            if 'language' in pattern:
-                new_patterns_lines.append(f'    language: {pattern["language"]}')
-            new_patterns_lines.append(f'    weight: {pattern["weight"]}')
+            if "language" in pattern:
+                new_patterns_lines.append(f"    language: {pattern['language']}")
+            new_patterns_lines.append(f"    weight: {pattern['weight']}")
 
-        new_patterns_section = '\n'.join(new_patterns_lines)
+        new_patterns_section = "\n".join(new_patterns_lines)
 
         # Rebuild frontmatter
         before_patterns = old_frontmatter[:patterns_start]
         after_patterns = old_frontmatter[patterns_end:]
 
-        new_frontmatter = before_patterns + '\n' + new_patterns_section + after_patterns
+        new_frontmatter = before_patterns + "\n" + new_patterns_section + after_patterns
 
         # Replace in full content
         updated_content = content.replace(old_frontmatter, new_frontmatter)

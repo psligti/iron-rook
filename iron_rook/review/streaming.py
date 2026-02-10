@@ -1,4 +1,5 @@
 """Real-time streaming infrastructure for PR review progress updates."""
+
 from __future__ import annotations
 
 import asyncio
@@ -64,9 +65,7 @@ class ErrorEvent(StreamEvent):
     error: str
 
 
-def calculate_progress(
-    completed: int, total: int, started_at: datetime
-) -> Dict[str, Any]:
+def calculate_progress(completed: int, total: int, started_at: datetime) -> Dict[str, Any]:
     """Calculate progress metadata.
 
     Args:
@@ -103,10 +102,15 @@ class StreamHandle:
     manager: "ReviewStreamManager"
     _closed: bool = field(default=False)
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "ReviewStreamContext":
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object | None,
+    ) -> None:
         self._closed = True
 
     @property
@@ -144,9 +148,7 @@ class ReviewStreamManager:
 
         return StreamHandle(manager=self)
 
-    async def emit_progress(
-        self, agent_name: str, status: str, data: dict
-    ) -> None:
+    async def emit_progress(self, agent_name: str, status: str, data: dict) -> None:
         """Emit a progress event for an agent.
 
         Args:
@@ -157,9 +159,7 @@ class ReviewStreamManager:
         event = ProgressEvent(agent_name=agent_name, data={"status": status, **data})
         await self._broadcast(event)
 
-    async def emit_result(
-        self, agent_name: str, result: ReviewOutput
-    ) -> None:
+    async def emit_result(self, agent_name: str, result: ReviewOutput) -> None:
         """Emit a result event when an agent completes.
 
         Args:

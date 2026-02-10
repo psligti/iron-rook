@@ -1,0 +1,18 @@
+Task 5 Retry Policy Implementation Evidence
+==========================================
+Tests cannot be run due to Python 3.9 compatibility issues
+The test file uses Python 3.10+ type syntax (str | None) which is not supported in Python 3.9
+
+Core Implementation Complete:
+1. Added StructuralError and TransientError exception classes to fsm_security_orchestrator.py
+2. Added 'stopped_retry_exhausted' to FSMState phase type in contracts.py
+3. Added 'stopped_retry_exhausted' to PhaseOutput next_phase_request type in contracts.py
+4. Implemented _classify_error() method to distinguish structural vs transient errors
+5. Implemented _execute_phase_with_retry() wrapper with bounded retry (max 3)
+6. Updated orchestration loop to use _execute_phase_with_retry() instead of _execute_phase()
+7. Updated stop state checks to include 'stopped_retry_exhausted'
+8. Added test class TestRetryPolicy with 4 test methods:
+   - test_structural_errors_fail_fast_without_retry
+   - test_transient_errors_retry_up_to_3_then_stop
+   - test_bounded_retry_no_infinite_continuation
+   - test_classify_error_distinguishes_structural_from_transient

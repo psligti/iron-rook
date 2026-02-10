@@ -1,17 +1,13 @@
 """Architecture Reviewer agent for checking architectural issues."""
 from __future__ import annotations
 from typing import List
-import pydantic as pd
 import logging
 
 from iron_rook.review.base import BaseReviewerAgent, ReviewContext
 from iron_rook.review.contracts import (
     ReviewOutput,
-    Scope,
-    MergeGate,
     get_review_output_schema,
 )
-from dawn_kestrel.core.harness import SimpleReviewAgentRunner
 
 logger = logging.getLogger(__name__)
 

@@ -1,0 +1,51 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.9.6, pytest-8.4.2, pluggy-1.6.0 -- /Library/Developer/CommandLineTools/usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/parkersligting/develop/pt/iron-rook
+configfile: pyproject.toml
+plugins: asyncio-1.2.0
+asyncio: mode=strict, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 0 items / 1 error
+
+==================================== ERRORS ====================================
+_______________ ERROR collecting tests/test_fsm_orchestrator.py ________________
+../../../Library/Python/3.9/lib/python/site-packages/pydantic/_internal/_typing_extra.py:492: in _eval_type_backport
+    return _eval_type(value, globalns, localns, type_params)
+../../../Library/Python/3.9/lib/python/site-packages/pydantic/_internal/_typing_extra.py:545: in _eval_type
+    return typing._eval_type(  # type: ignore
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/typing.py:290: in _eval_type
+    return t._evaluate(globalns, localns, recursive_guard)
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/typing.py:546: in _evaluate
+    eval(self.__forward_code__, globalns, localns),
+<string>:1: in <module>
+    ???
+E   TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
+
+The above exception was the direct cause of the following exception:
+tests/test_fsm_orchestrator.py:5: in <module>
+    from iron_rook.review.contracts import (
+iron_rook/review/__init__.py:4: in <module>
+    from iron_rook.review.orchestrator import PRReviewOrchestrator
+iron_rook/review/orchestrator.py:9: in <module>
+    from iron_rook.review.base import BaseReviewerAgent, ReviewContext
+iron_rook/review/base.py:62: in <module>
+    class ReviewContext(pd.BaseModel):
+../../../Library/Python/3.9/lib/python/site-packages/pydantic/_internal/_model_construction.py:242: in __new__
+    set_model_fields(cls, config_wrapper=config_wrapper, ns_resolver=ns_resolver)
+../../../Library/Python/3.9/lib/python/site-packages/pydantic/_internal/_model_construction.py:566: in set_model_fields
+    fields, class_vars = collect_model_fields(cls, config_wrapper, ns_resolver, typevars_map=typevars_map)
+../../../Library/Python/3.9/lib/python/site-packages/pydantic/_internal/_fields.py:256: in collect_model_fields
+    type_hints = _typing_extra.get_model_type_hints(cls, ns_resolver=ns_resolver)
+../../../Library/Python/3.9/lib/python/site-packages/pydantic/_internal/_typing_extra.py:350: in get_model_type_hints
+    hints[name] = try_eval_type(value, globalns, localns)
+../../../Library/Python/3.9/lib/python/site-packages/pydantic/_internal/_typing_extra.py:404: in try_eval_type
+    return eval_type_backport(value, globalns, localns), True
+../../../Library/Python/3.9/lib/python/site-packages/pydantic/_internal/_typing_extra.py:455: in eval_type_backport
+    return _eval_type_backport(value, globalns, localns, type_params)
+../../../Library/Python/3.9/lib/python/site-packages/pydantic/_internal/_typing_extra.py:500: in _eval_type_backport
+    raise TypeError(
+E   TypeError: Unable to evaluate type annotation 'str | None'. If you are making use of the new typing syntax (unions using `|` since Python 3.10 or builtins subscripting since Python 3.9), you should either replace the use of new syntax with the existing `typing` constructs or install the `eval_type_backport` package.
+=========================== short test summary info ============================
+ERROR tests/test_fsm_orchestrator.py - TypeError: Unable to evaluate type annotation 'str | None'. If you are making use of the new typing syntax (unions using `|` since Python 3.10 or builtins subscripting since Python 3.9), you should either replace the use of new syntax with the existing `typing` constructs or install the `eval_type_backport` package.
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+=============================== 1 error in 0.14s ===============================

@@ -138,6 +138,34 @@ class MissingPhaseContextError(Exception):
     pass
 
 
+class StructuralError(Exception):
+    """Error raised for structural failures - fail-fast without retry.
+
+    Structural errors are deterministic and retrying will not help:
+    - Schema validation failures (Pydantic ValidationError)
+    - Missing required fields
+    - Invalid FSM transitions (FSMPhaseError)
+    - Missing phase prompts (MissingPhasePromptError)
+    - Missing phase context (MissingPhaseContextError)
+    - Budget exceeded (BudgetExceededError)
+    """
+
+    pass
+
+
+class TransientError(Exception):
+    """Error raised for transient failures - safe to retry with bounded limit.
+
+    Transient errors are non-deterministic and may succeed on retry:
+    - Provider/network timeouts
+    - Intermittent connection failures
+    - Rate limiting (with backoff)
+    - Temporary service unavailability
+    """
+
+    pass
+
+
 class SecurityReviewOrchestrator:
     """Orchestrator for FSM-based Security Review Agent.
 
@@ -203,6 +231,38 @@ class SecurityReviewOrchestrator:
                 f"iterations={self.state.iterations}, "
                 f"subagents={self.state.subagents_used}"
             )
+
+    def _classify_error(self, error: Exception) -> Exception:
+        """Classify error as structural or transient.
+
+        Args:
+            error: The exception to classify
+
+        Returns:
+            Either StructuralError or TransientError wrapping the original error
+
+        Raises:
+            StructuralError: For deterministic errors that won't benefit from retry
+            TransientError: For non-deterministic errors that may succeed on retry
+        """
+        import json
+
+        structural_exceptions = (
+            FSMPhaseError,
+            BudgetExceededError,
+            MissingPhasePromptError,
+            MissingPhaseContextError,
+            pd.ValidationError,
+            ValueError,
+            json.JSONDecodeError,
+        )
+
+        if isinstance(error, structural_exceptions):
+            logger.debug(f"Classified as structural error: {type(error).__name__}: {error}")
+            return StructuralError(f"{type(error).__name__}: {error}")
+        else:
+            logger.debug(f"Classified as transient error: {type(error).__name__}: {error}")
+            return TransientError(f"{type(error).__name__}: {error}")
 
     def _validate_phase_context(self, phase: str, context_data: Dict[str, Any]) -> None:
         """Validate that required fields exist for the specified phase.
@@ -284,7 +344,7 @@ class SecurityReviewOrchestrator:
         if next_phase_request is None:
             error_msg = (
                 f"Phase {from_phase} returned None for next_phase_request. "
-                f"Expected one of: plan_todos, delegate, collect, consolidate, evaluate, done, stopped_budget, stopped_human"
+                f"Expected one of: plan_todos, delegate, collect, consolidate, evaluate, done, stopped_budget, stopped_human, stopped_retry_exhausted"
             )
             logger.error(error_msg)
             raise FSMPhaseError(error_msg)
@@ -309,6 +369,7 @@ class SecurityReviewOrchestrator:
             "done",
             "stopped_budget",
             "stopped_human",
+            "stopped_retry_exhausted",
         }
         if next_phase_request not in valid_phases:
             error_msg = (
@@ -319,7 +380,7 @@ class SecurityReviewOrchestrator:
             raise FSMPhaseError(error_msg)
 
         # Handle stop states - these are terminal but not part of FSM_TRANSITIONS
-        if next_phase_request in ("stopped_budget", "stopped_human"):
+        if next_phase_request in ("stopped_budget", "stopped_human", "stopped_retry_exhausted"):
             self.state.phase = next_phase_request
             self.state.stop_reason = next_phase_request
             logger.info(f"FSM transitioned to stop state: {next_phase_request}")
@@ -479,6 +540,100 @@ class SecurityReviewOrchestrator:
         else:
             raise ValueError(f"Unknown phase: {phase}")
 
+    def _parse_agent_response(self, response_text: str, phase: str) -> Dict[str, Any]:
+        """Parse agent response text to extract JSON content.
+
+        Handles markdown-wrapped JSON (```json...```json```) and direct JSON strings.
+
+        Args:
+            response_text: Raw response text from LLM or agent runtime
+            phase: Current phase name for error messages
+
+        Returns:
+            Parsed JSON as dictionary
+
+        Raises:
+            InvalidPhaseOutputError: If JSON parsing fails
+        """
+        # Handle markdown-wrapped JSON (LLM sometimes returns ```json...```json```)
+        json_text = response_text.strip()
+        if json_text.startswith("```"):
+            lines = json_text.split("\n")
+            in_code_block = False
+            json_lines = []
+            for line in lines:
+                if line.strip().startswith("```"):
+                    in_code_block = not in_code_block
+                elif in_code_block and not line.strip().startswith("```"):
+                    json_lines.append(line)
+            json_text = "\n".join(json_lines).strip()
+            logger.debug(f"Extracted JSON content: {repr(json_text[:200])}")
+
+        try:
+            output_data = json.loads(json_text)
+            logger.debug(f"Parsed JSON successfully: {output_data}")
+            return output_data
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing failed: {e}")
+            raise InvalidPhaseOutputError(f"Failed to parse phase {phase} output as JSON: {e}")
+
+    async def _execute_phase_with_retry(
+        self,
+        phase: str,
+        context_data: Dict[str, Any],
+        max_retries: int = 3,
+    ) -> Dict[str, Any] | None:
+        """Execute a phase with bounded retry for transient errors.
+
+        Structural errors fail-fast without retry.
+        Transient errors retry up to max_retries times before stopping.
+
+        Args:
+            phase: Phase to execute
+            context_data: Context data for the phase
+            max_retries: Maximum number of retry attempts for transient errors
+
+        Returns:
+            Phase output data (parsed JSON) or None if all retries exhausted
+
+        Raises:
+            StructuralError: For structural errors (fail-fast, no retry)
+        """
+        last_error = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                return await self._execute_phase(phase, context_data)
+            except Exception as e:
+                last_error = e
+                classified_error = self._classify_error(e)
+
+                if isinstance(classified_error, StructuralError):
+                    logger.error(
+                        f"Phase {phase} failed with structural error (attempt {attempt + 1}/{max_retries + 1}): {classified_error}"
+                    )
+                    raise classified_error
+                elif isinstance(classified_error, TransientError):
+                    if attempt < max_retries:
+                        logger.warning(
+                            f"Phase {phase} failed with transient error (attempt {attempt + 1}/{max_retries + 1}): {classified_error}. Retrying..."
+                        )
+                        continue
+                    else:
+                        logger.error(
+                            f"Phase {phase} failed with transient error after {max_retries + 1} attempts: {classified_error}"
+                        )
+                        self.state.phase = "stopped_retry_exhausted"  # type: ignore[assignment]
+                        self.state.stop_reason = f"Transient error exhausted retries in phase {phase}: {classified_error}"
+                        return None
+                else:
+                    logger.error(
+                        f"Unexpected error type from classification: {type(classified_error)}"
+                    )
+                    raise
+
+        return None
+
     async def _execute_phase(
         self,
         phase: str,
@@ -502,10 +657,36 @@ class SecurityReviewOrchestrator:
         system_prompt = self._load_phase_prompt(phase)
         user_message = self._construct_phase_user_message(phase, context_data)
 
-        session = await self.session_manager.get_session("security_review_fsm")
+        session_id = "security_review_fsm"
+        session = await self.session_manager.get_session(session_id)
 
         try:
-            if self.agent_runtime is None:
+            if self.agent_runtime is not None:
+                # Use AgentRuntime for primary execution path
+                agent_result = await self.agent_runtime.execute_agent(
+                    agent_name="security_review_fsm",
+                    session_id="security_review_fsm",
+                    user_message=user_message,
+                    session_manager=self.session_manager,
+                    tools=None,  # No tools needed for FSM phase execution
+                    skills=[],
+                )
+
+                # Extract response text from agent result
+                # AgentRuntime returns an object with content attribute
+                response_text = getattr(agent_result, "content", "")
+                if not response_text:
+                    logger.error(f"AgentRuntime returned empty content for phase {phase}")
+                    return None
+
+                logger.debug(
+                    f"AgentRuntime response for phase {phase}: {response_text[:500]}{'...' if len(response_text) > 500 else ''}"
+                )
+
+                # Parse and return using shared parsing logic
+                return self._parse_agent_response(response_text, phase)
+
+            else:
                 # Direct LLM call without agent runtime - use LLMClient
                 from dawn_kestrel.llm import LLMClient, LLMRequestOptions
                 from dawn_kestrel.core.settings import settings
@@ -553,29 +734,8 @@ class SecurityReviewOrchestrator:
                     f"LLM response for phase {phase}: {response_text[:500]}{'...' if len(response_text) > 500 else ''}"
                 )
 
-                # Handle markdown-wrapped JSON (LLM sometimes returns ```json...```json```)
-                json_text = response_text.strip()
-                if json_text.startswith("```"):
-                    lines = json_text.split("\n")
-                    in_code_block = False
-                    json_lines = []
-                    for line in lines:
-                        if line.strip().startswith("```"):
-                            in_code_block = not in_code_block
-                        elif in_code_block and not line.strip().startswith("```"):
-                            json_lines.append(line)
-                    json_text = "\n".join(json_lines).strip()
-                    logger.debug(f"Extracted JSON content: {repr(json_text[:200])}")
-
-                try:
-                    output_data = json.loads(json_text)
-                    logger.debug(f"Parsed JSON successfully: {output_data}")
-                    return output_data
-                except json.JSONDecodeError as e:
-                    logger.error(f"JSON parsing failed: {e}")
-                    raise InvalidPhaseOutputError(
-                        f"Failed to parse phase {phase} output as JSON: {e}"
-                    )
+                # Parse and return using shared parsing logic (same as runtime path)
+                return self._parse_agent_response(response_text, phase)
 
         except BudgetExceededError as e:
             logger.error(f"Budget exceeded: {e}")
@@ -591,6 +751,14 @@ class SecurityReviewOrchestrator:
 
             traceback.print_exc()
             return None
+
+        finally:
+            # Ensure session is always released to prevent leaks
+            try:
+                await self.session_manager.release_session(session_id)
+                logger.debug(f"Released session: {session_id} for phase {phase}")
+            except Exception as e:
+                logger.warning(f"Failed to release session {session_id}: {e}")
 
     def _build_partial_report(self, reason: str) -> SecurityReviewReport:
         """Build a partial report when FSM is stopped early.
@@ -770,7 +938,7 @@ class SecurityReviewOrchestrator:
         }
 
         self._validate_phase_context("intake", context_data)
-        intake_output = await self._execute_phase("intake", context_data)
+        intake_output = await self._execute_phase_with_retry("intake", context_data)
 
         if intake_output is None:
             logger.error("Intake phase returned None - LLM execution failed")
@@ -792,11 +960,11 @@ class SecurityReviewOrchestrator:
 
         self._transition_to_phase(phase_output.next_phase_request)
 
-        if self.state.phase in ("stopped_budget", "stopped_human"):
+        if self.state.phase in ("stopped_budget", "stopped_human", "stopped_retry_exhausted"):
             return self._build_partial_report("stopped_by_gate")
 
         self._validate_phase_context("plan_todos", context_data)
-        plan_todos_output = await self._execute_phase("plan_todos", context_data)
+        plan_todos_output = await self._execute_phase_with_retry("plan_todos", context_data)
 
         if plan_todos_output is None:
             return self._build_partial_report("plan_todos_failed")
@@ -810,10 +978,15 @@ class SecurityReviewOrchestrator:
         plan_todos_data = phase_output.data.get("todos", [])
         self.todos = [SecurityTodo.model_validate(todo) for todo in plan_todos_data]
 
-        while self.state.phase not in ("done", "stopped_budget", "stopped_human"):
+        while self.state.phase not in (
+            "done",
+            "stopped_budget",
+            "stopped_human",
+            "stopped_retry_exhausted",
+        ):
             if self.state.phase == "delegate":
                 self._validate_phase_context("delegate", context_data)
-                delegate_output = await self._execute_phase(
+                delegate_output = await self._execute_phase_with_retry(
                     "delegate",
                     context_data,
                 )
@@ -824,7 +997,7 @@ class SecurityReviewOrchestrator:
 
             elif self.state.phase == "collect":
                 self._validate_phase_context("collect", context_data)
-                collect_output = await self._execute_phase(
+                collect_output = await self._execute_phase_with_retry(
                     "collect",
                     context_data,
                 )
@@ -835,7 +1008,7 @@ class SecurityReviewOrchestrator:
 
             elif self.state.phase == "consolidate":
                 self._validate_phase_context("consolidate", context_data)
-                consolidate_output = await self._execute_phase(
+                consolidate_output = await self._execute_phase_with_retry(
                     "consolidate",
                     context_data,
                 )
@@ -846,7 +1019,7 @@ class SecurityReviewOrchestrator:
 
             elif self.state.phase == "evaluate":
                 self._validate_phase_context("evaluate", context_data)
-                evaluate_output = await self._execute_phase(
+                evaluate_output = await self._execute_phase_with_retry(
                     "evaluate",
                     context_data,
                 )

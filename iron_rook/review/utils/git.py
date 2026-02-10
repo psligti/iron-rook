@@ -96,7 +96,7 @@ async def get_diff(repo_root: str, base_ref: str, head_ref: str) -> str:
     diff_text = []
     for diff_item in base_commit.diff(head_commit, create_patch=True):
         if diff_item.diff:
-            diff_text.append(diff_item.diff.decode("utf-8", errors="ignore"))
+            diff_text.append(diff_item.diff.decode("utf-8", errors="ignore"))  # type: ignore[attr-defined]
 
     return "".join(diff_text)
 
@@ -125,8 +125,8 @@ async def get_repo_tree(repo_root: str) -> str:
     tree_lines = []
 
     for item in tree.traverse():
-        if item.type == "blob":
-            tree_lines.append(item.path)
+        if item.type == "blob":  # type: ignore[attr-defined]
+            tree_lines.append(item.path)  # type: ignore[attr-defined]
 
     return "\n".join(tree_lines)
 

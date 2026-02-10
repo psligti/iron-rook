@@ -1,0 +1,133 @@
+..........F...F.                                                         [100%]
+=================================== FAILURES ===================================
+_______________ TestSecurityReviewReport.test_valid_final_report _______________
+
+self = <test_schemas.TestSecurityReviewReport object at 0x11017ec60>
+
+    def test_valid_final_report(self) -> None:
+        """Test valid final security review report."""
+        report_data = {
+            "agent": {
+                "name": "security_review_agent",
+                "version": "0.1.0",
+            },
+            "pr": {
+                "id": "1234",
+                "title": "Add auth middleware",
+            },
+            "fsm": {
+                "iterations": 2,
+                "stop_reason": "done",
+                "tool_calls_used": 14,
+                "subagents_used": 3,
+            },
+            "todos": [
+                {
+                    "todo_id": "SEC-001",
+                    "status": "done",
+                    "subagent_type": "auth_security",
+                },
+                {
+                    "todo_id": "SEC-002",
+                    "status": "done",
+                    "subagent_type": None,
+                },
+            ],
+            "findings": {
+                "critical": [],
+                "high": [],
+                "medium": [
+                    {
+                        "id": "FND-001",
+                        "todo_id": "SEC-001",
+                        "severity": "medium",
+                        "title": "JWKS cache TTL issue",
+                        "description": "Cache TTL is 24h",
+                        "evidence": [
+                            {
+                                "type": "file_ref",
+                                "path": "src/auth/jwt.py",
+                                "lines": "88-121",
+                            }
+                        ],
+                        "recommendations": [
+                            "Reduce TTL",
+                        ],
+                    }
+                ],
+                "low": [],
+                "info": [],
+            },
+            "risk_assessment": {
+                "overall": "medium",
+                "rationale": "Authentication changes with caching concern",
+                "areas_touched": ["auth", "config"],
+            },
+            "evidence_index": [
+                {
+                    "type": "file_ref",
+                    "path": "src/auth/jwt.py",
+                    "lines": "88-121",
+                }
+            ],
+            "actions": {
+                "required": [
+                    {
+                        "type": "code_change",
+                        "description": "Reduce JWKS cache TTL",
+                    }
+                ],
+                "suggested": [],
+            },
+            "confidence": 0.82,
+            "missing_information": [],
+        }
+    
+>       report = SecurityReviewReport.model_validate(report_data)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 3 validation errors for SecurityReviewReport
+E       fsm.phase
+E         Field required [type=missing, input_value={'iterations': 2, 'stop_r...14, 'subagents_used': 3}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+E       findings.medium.0.id
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='FND-001', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+E       findings.medium.0.todo_id
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='SEC-001', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+
+tests/test_schemas.py:371: ValidationError
+____________ TestEvidenceRef.test_invalid_evidence_ref_missing_type ____________
+
+self = <test_schemas.TestEvidenceRef object at 0x11017f3b0>
+
+    def test_invalid_evidence_ref_missing_type(self) -> None:
+        """Test validation fails for missing type."""
+        ref_data = {
+            "path": "src/auth/jwt.py",
+        }
+    
+        with pytest.raises(pd.ValidationError) as exc_info:
+            EvidenceRef.model_validate(ref_data)
+        has_missing_loc = False
+        for error in exc_info.value.errors():
+            if error["loc"] and len(error["loc"]) > 0 and error["loc"][0] == "missing":
+                has_missing_loc = True
+                break
+>       assert has_missing_loc
+E       assert False
+
+tests/test_schemas.py:431: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_schemas.py::TestSecurityReviewReport::test_valid_final_report - pydantic_core._pydantic_core.ValidationError: 3 validation errors for SecurityReviewReport
+fsm.phase
+  Field required [type=missing, input_value={'iterations': 2, 'stop_r...14, 'subagents_used': 3}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.12/v/missing
+findings.medium.0.id
+  Extra inputs are not permitted [type=extra_forbidden, input_value='FND-001', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+findings.medium.0.todo_id
+  Extra inputs are not permitted [type=extra_forbidden, input_value='SEC-001', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+FAILED tests/test_schemas.py::TestEvidenceRef::test_invalid_evidence_ref_missing_type - assert False
+2 failed, 14 passed in 0.14s

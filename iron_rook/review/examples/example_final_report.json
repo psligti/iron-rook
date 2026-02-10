@@ -1,0 +1,81 @@
+{
+  "agent": {
+    "name": "security_review_agent",
+    "version": "0.1.0"
+  },
+  "pr": {
+    "id": "1234",
+    "title": "Add auth middleware and token refresh"
+  },
+  "fsm": {
+    "iterations": 2,
+    "stop_reason": "done",
+    "tool_calls_used": 14,
+    "subagents_used": 3
+  },
+  "todos": [
+    {
+      "todo_id": "SEC-001",
+      "status": "done",
+      "subagent_type": "auth_security"
+    },
+    {
+      "todo_id": "SEC-002",
+      "status": "done",
+      "subagent_type": null
+    }
+  ],
+  "findings": {
+    "critical": [],
+    "high": [],
+    "medium": [
+      {
+        "id": "FND-001",
+        "todo_id": "SEC-001",
+        "title": "JWKS cache TTL may allow key rotation gap",
+        "severity": "medium",
+        "evidence": [
+          {
+            "type": "file_ref",
+            "path": "src/auth/jwt.py",
+            "lines": "88-121"
+          }
+        ],
+        "recommendations": [
+          "Reduce TTL and add cache bust on kid mismatch",
+          "Add telemetry for verification failures by kid"
+        ]
+      }
+    ],
+    "low": [],
+    "info": []
+  },
+  "risk_assessment": {
+    "overall": "medium",
+    "rationale": "Authentication changes + token refresh introduced; one caching concern.",
+    "areas_touched": ["auth", "config", "middleware"]
+  },
+  "evidence_index": [
+    {
+      "type": "file_ref",
+      "path": "src/auth/jwt.py",
+      "lines": "88-121"
+    }
+  ],
+  "actions": {
+    "required": [
+      {
+        "type": "code_change",
+        "description": "Reduce JWKS cache TTL and add kid mismatch handling"
+      }
+    ],
+    "suggested": [
+      {
+        "type": "telemetry",
+        "description": "Add metrics for verification failures by kid"
+      }
+    ]
+  },
+  "confidence": 0.82,
+  "missing_information": []
+}

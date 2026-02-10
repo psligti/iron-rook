@@ -1,0 +1,46 @@
+{
+  "todo_id": "SEC-001",
+  "subagent_type": "auth_security",
+  "fsm": {
+    "phase": "done",
+    "iterations": 2,
+    "stop_reason": "done"
+  },
+  "summary": "JWT verification uses RS256 with key fetched from JWKS cache; refresh flow checks token_id blacklist.",
+  "findings": [
+    {
+      "severity": "medium",
+      "title": "JWKS cache TTL may allow key rotation gap",
+      "description": "Cache TTL is 24h; revoked keys may remain valid until refresh.",
+      "evidence": [
+        {
+          "type": "file_ref",
+          "path": "src/auth/jwt.py",
+          "lines": "88-121"
+        }
+      ],
+      "recommendations": [
+        "Reduce TTL and add cache bust on kid mismatch",
+        "Add telemetry for verification failures by kid"
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "type": "file_ref",
+      "path": "src/auth/jwt.py",
+      "lines": "88-121"
+    },
+    {
+      "type": "diff_ref",
+      "path": "src/auth/middleware.py",
+      "lines": "12-79"
+    }
+  ],
+  "recommendations": [
+    "Reduce TTL and add cache bust on kid mismatch",
+    "Add telemetry for verification failures by kid"
+  ],
+  "confidence": 0.78,
+  "needs_more": []
+}

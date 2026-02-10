@@ -388,6 +388,25 @@ def review(
         available_agents = set(ReviewerRegistry.get_all_names())
         if agent and agent not in available_agents:
             names = ", ".join(sorted(available_agents))
+            # Show deprecation warning if user tries to use deprecated 'security' agent
+            if agent == "security":
+                console.print()
+                console.print("[yellow]WARNING: The 'security' agent is deprecated.[/yellow]")
+                console.print(
+                    "[yellow]Please use the FSM-based security reviewer instead via:[/yellow]"
+                )
+                console.print("[cyan]iron-rook --agent security-fsm[/cyan]")
+                console.print()
+                raise click.ClickException(f"Unknown agent '{agent}'. Available agents: {names}")
+        # Show deprecation warning if user tries to use deprecated 'security' agent
+        if agent == "security":
+            console.print()
+            console.print("[yellow]WARNING: The 'security' agent is deprecated.[/yellow]")
+            console.print(
+                "[yellow]Please use the FSM-based security reviewer instead via:[/yellow]"
+            )
+            console.print("[cyan]iron-rook --agent security-fsm[/cyan]")
+            console.print()
             raise click.ClickException(f"Unknown agent '{agent}'. Available agents: {names}")
 
         # Register security agent in shared AgentRegistry for AgentRuntime execution

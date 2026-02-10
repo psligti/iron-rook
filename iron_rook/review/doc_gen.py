@@ -3,6 +3,7 @@
 This module provides functionality to automatically generate entry point documentation
 for review agents by extracting patterns from their system prompts.
 """
+
 from __future__ import annotations
 from typing import List, Dict, Any, Optional
 from pathlib import Path
@@ -26,7 +27,7 @@ class DocGenAgent:
     - Heuristics (high-level review guidance)
     """
 
-    def __init__(self, agents_dir: Optional[Path] = None):
+    def __init__(self, agents_dir: Optional[Path] = None) -> None:
         """Initialize DocGenAgent.
 
         Args:
@@ -38,10 +39,7 @@ class DocGenAgent:
         self.output_dir = Path(__file__).parents[4] / "docs" / "reviewers"
 
     def generate_for_agent(
-        self,
-        agent: BaseReviewerAgent,
-        force: bool = False,
-        output_path: Optional[Path] = None
+        self, agent: BaseReviewerAgent, force: bool = False, output_path: Optional[Path] = None
     ) -> tuple[bool, str]:
         """Generate documentation for a specific review agent.
 
@@ -81,63 +79,65 @@ class DocGenAgent:
             # If no heuristics extracted, add default based on agent name
             if not heuristics:
                 default_heuristics = {
-                    'security': [
+                    "security": [
                         "Check for insecure imports (pickle, eval, exec, marshal, shelve)",
                         "Verify proper authentication and authorization checks",
                         "Look for SQL injection vulnerabilities in database queries",
                     ],
-                    'architecture': [
+                    "architecture": [
                         "Check for circular dependencies between modules",
                         "Look for god objects with too many responsibilities",
                         "Verify dependency injection patterns are consistent",
                     ],
-                    'documentation': [
+                    "documentation": [
                         "Check for missing docstrings on public functions/classes",
                         "Verify README reflects current behavior and features",
                         "Look for changes that require configuration documentation updates",
                     ],
-                    'linting': [
+                    "linting": [
                         "Check for mutable default arguments (= [], = {})",
                         "Look for type hints coverage on public APIs",
                         "Verify import ordering and grouping",
                     ],
-                    'telemetry': [
+                    "telemetry": [
                         "Check for secrets/PII being logged in error messages",
                         "Look for critical paths with no error logging or metrics",
                         "Verify retry loops have limits and logging for visibility",
                     ],
-                    'unit_tests': [
+                    "unit_tests": [
                         "Check for tests with time dependencies (need mocking)",
                         "Look for tests using random (need seeding for determinism)",
                         "Verify assertions are specific (not just assert True)",
                     ],
-                    'diff_scoper': [
+                    "diff_scoper": [
                         "Classify diff risk based on lines changed (>500 lines = high risk)",
                         "Look for deletions of classes/functions (breaking changes)",
                         "Check for changes to critical paths (auth, payments, core logic)",
                     ],
-                    'requirements': [
+                    "requirements": [
                         "Compare implementation to PR description/ticket requirements",
                         "Check for acceptance criteria coverage",
                         "Look for incomplete implementations (NotImplementedError, pass)",
                     ],
-                    'performance': [
+                    "performance": [
                         "Look for nested loops (O(n^2) complexity)",
                         "Check for N+1 query patterns (queries inside loops)",
                         "Verify retry logic has exponential backoff and max attempts",
                     ],
-                    'dependencies': [
+                    "dependencies": [
                         "Check for new dependencies added without justification",
                         "Verify license compatibility (avoid GPL/AGPL if proprietary)",
                         "Look for loosened version pins (reproducibility risk)",
                     ],
-                    'changelog': [
+                    "changelog": [
                         "Check for breaking changes without migration notes",
                         "Verify version bump matches change scope (major/minor/patch)",
                         "Look for user-visible behavior changes without changelog entry",
                     ],
                 }
-                heuristics = default_heuristics.get(agent_name, ["Review code changes for relevant patterns"])
+                heuristics = default_heuristics.get(
+                    agent_name, ["Review code changes for relevant patterns"]
+                )
 
             # Determine agent type
             agent_type = self._determine_agent_type(agent)
@@ -148,7 +148,7 @@ class DocGenAgent:
                 agent_type=agent_type,
                 patterns=patterns,
                 heuristics=heuristics,
-                prompt_hash=prompt_hash
+                prompt_hash=prompt_hash,
             )
 
             # Generate full documentation content
@@ -157,7 +157,7 @@ class DocGenAgent:
                 frontmatter=frontmatter,
                 system_prompt=system_prompt,
                 patterns=patterns,
-                heuristics=heuristics
+                heuristics=heuristics,
             )
 
             # Save documentation
@@ -178,7 +178,7 @@ class DocGenAgent:
         Returns:
             Hexadecimal hash string
         """
-        return hashlib.sha256(content.encode('utf-8')).hexdigest()[:24]
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()[:24]
 
     def _get_agent_name(self, agent: BaseReviewerAgent) -> str:
         """Extract agent name from agent instance.
@@ -189,10 +189,10 @@ class DocGenAgent:
         Returns:
             Agent name string
         """
-        get_name_method = getattr(agent, 'get_agent_name', None)
+        get_name_method = getattr(agent, "get_agent_name", None)
         if get_name_method and callable(get_name_method):
             return get_name_method()
-        return agent.__class__.__name__.lower().replace('reviewer', '')
+        return agent.__class__.__name__.lower().replace("reviewer", "")
 
     def _extract_existing_hash(self, doc_path: Path) -> Optional[str]:
         """Extract prompt_hash from existing documentation.
@@ -205,7 +205,7 @@ class DocGenAgent:
         """
         try:
             content = doc_path.read_text()
-            match = re.search(r'^prompt_hash:\s*(\S+)', content, re.MULTILINE)
+            match = re.search(r"^prompt_hash:\s*(\S+)", content, re.MULTILINE)
             if match:
                 return match.group(1)
         except Exception:
@@ -213,9 +213,7 @@ class DocGenAgent:
         return None
 
     def _extract_patterns_from_prompt(
-        self,
-        system_prompt: str,
-        agent: BaseReviewerAgent
+        self, system_prompt: str, agent: BaseReviewerAgent
     ) -> List[Dict[str, Any]]:
         """Extract patterns from system prompt.
 
@@ -244,37 +242,37 @@ class DocGenAgent:
         patterns.extend(content_patterns)
 
         # Ensure minimum pattern counts
-        ast_count = len([p for p in patterns if p['type'] == 'ast'])
-        file_path_count = len([p for p in patterns if p['type'] == 'file_path'])
-        content_count = len([p for p in patterns if p['type'] == 'content'])
+        ast_count = len([p for p in patterns if p["type"] == "ast"])
+        file_path_count = len([p for p in patterns if p["type"] == "file_path"])
+        content_count = len([p for p in patterns if p["type"] == "content"])
 
         if ast_count < 3:
-            patterns.append({
-                'type': 'ast',
-                'pattern': 'FunctionDef with decorator',
-                'language': 'python',
-                'weight': 0.7
-            })
+            patterns.append(
+                {
+                    "type": "ast",
+                    "pattern": "FunctionDef with decorator",
+                    "language": "python",
+                    "weight": 0.7,
+                }
+            )
 
         if file_path_count < 2:
             relevant_patterns = agent.get_relevant_file_patterns()
             for pattern_str in relevant_patterns[:5]:
-                patterns.append({
-                    'type': 'file_path',
-                    'pattern': pattern_str,
-                    'weight': 0.7
-                })
+                patterns.append({"type": "file_path", "pattern": pattern_str, "weight": 0.7})
 
         if content_count < 2:
-            patterns.append({
-                'type': 'content',
-                'pattern': 'import\\s+\\w+|from\\s+\\w+',
-                'language': 'python',
-                'weight': 0.7
-            })
+            patterns.append(
+                {
+                    "type": "content",
+                    "pattern": "import\\s+\\w+|from\\s+\\w+",
+                    "language": "python",
+                    "weight": 0.7,
+                }
+            )
 
         # Sort patterns by weight (descending)
-        patterns.sort(key=lambda x: x['weight'], reverse=True)
+        patterns.sort(key=lambda x: x["weight"], reverse=True)
 
         return patterns
 
@@ -298,53 +296,80 @@ class DocGenAgent:
 
         # AST pattern indicators
         ast_keywords = [
-            (r'FunctionDef with decorator ["\']@(\w+)["\']', 0.85, 'FunctionDef with decorator'),
-            (r'FunctionDef without docstring', 0.7, 'FunctionDef without docstring'),
-            (r'ClassDef with decorator ["\']@(\w+)["\']', 0.8, 'ClassDef with decorator'),
-            (r'ClassDef without docstring', 0.7, 'ClassDef without docstring'),
-            (r'ClassDef with (?:name|base) ["\'](\w+)["\']', 0.75, 'ClassDef with name/base'),
-            (r'ClassDef with more than (\d+) methods', 0.8, 'ClassDef with many methods'),
-            (r'FunctionDef with (?:parameter|arg)s? ["\']([^"\']+)["\']', 0.75, 'FunctionDef with specific parameter'),
-            (r'FunctionDef with more than (\d+) (?:parameter|arg)s?', 0.7, 'FunctionDef with many parameters'),
-            (r'FunctionDef with depth > (\d+)', 0.8, 'FunctionDef with deep nesting'),
-            (r'AsyncFunctionDef', 0.65, 'AsyncFunctionDef'),
-            (r'AsyncFunctionDef with more than (\d+) [\'"]?await[\'"]?', 0.75, 'AsyncFunctionDef with multiple awaits'),
-            (r'Call with function (?:name )?["\'](\w+)["\']', 0.75, 'Call with function name'),
-            (r'Call with function ["\'](\w+\.\w+)["\']', 0.8, 'Call with function'),
-            (r'Call with function ["\'](\w+\.\w+)["\'] and keyword argument ["\'](\w+)["\']', 0.85, 'Call with function and argument'),
-            (r'Import with (?:module )?["\']([^"\']+)["\']', 0.7, 'Import with module'),
-            (r'Import matching ["\']([^"\']+)["\']', 0.7, 'Import matching pattern'),
-            (r'For with nested For', 0.85, 'For with nested For'),
-            (r'While with nested While', 0.9, 'While with nested While'),
-            (r'AsyncFor with nested AsyncFor', 0.85, 'AsyncFor with nested AsyncFor'),
-            (r'Try with more than one ExceptHandler', 0.8, 'Try with multiple exceptions'),
-            (r'Try with bare ["\']except:?[\'"]?', 0.85, 'Try with bare except'),
-            (r'FunctionDef with name (?:containing|starting with) ["\'](\w+)["\']', 0.75, 'FunctionDef with specific name'),
-            (r'ClassDef with name ending in ["\'](\w+)["\']', 0.8, 'ClassDef with name ending in'),
-            (r'FunctionDef with decorator ["\']@(\w+)["\']', 0.85, 'FunctionDef with decorator'),
-            (r'FunctionDef with body containing only ["\'](\w+)["\']', 0.75, 'FunctionDef with simple body'),
-            (r'FunctionDef with parameter default ["\'](\S+)["\']', 0.9, 'FunctionDef with mutable default'),
-            (r'Import with alias ["\'](\w+ import \w+ as \w+)["\']', 0.65, 'Import with alias'),
-            (r'Import matching ["\']import \*["\']', 0.9, 'Import star'),
-            (r'FunctionDef with (?:no return|without return) annotations', 0.75, 'FunctionDef without return annotations'),
+            (r'FunctionDef with decorator ["\']@(\w+)["\']', 0.85, "FunctionDef with decorator"),
+            (r"FunctionDef without docstring", 0.7, "FunctionDef without docstring"),
+            (r'ClassDef with decorator ["\']@(\w+)["\']', 0.8, "ClassDef with decorator"),
+            (r"ClassDef without docstring", 0.7, "ClassDef without docstring"),
+            (r'ClassDef with (?:name|base) ["\'](\w+)["\']', 0.75, "ClassDef with name/base"),
+            (r"ClassDef with more than (\d+) methods", 0.8, "ClassDef with many methods"),
+            (
+                r'FunctionDef with (?:parameter|arg)s? ["\']([^"\']+)["\']',
+                0.75,
+                "FunctionDef with specific parameter",
+            ),
+            (
+                r"FunctionDef with more than (\d+) (?:parameter|arg)s?",
+                0.7,
+                "FunctionDef with many parameters",
+            ),
+            (r"FunctionDef with depth > (\d+)", 0.8, "FunctionDef with deep nesting"),
+            (r"AsyncFunctionDef", 0.65, "AsyncFunctionDef"),
+            (
+                r'AsyncFunctionDef with more than (\d+) [\'"]?await[\'"]?',
+                0.75,
+                "AsyncFunctionDef with multiple awaits",
+            ),
+            (r'Call with function (?:name )?["\'](\w+)["\']', 0.75, "Call with function name"),
+            (r'Call with function ["\'](\w+\.\w+)["\']', 0.8, "Call with function"),
+            (
+                r'Call with function ["\'](\w+\.\w+)["\'] and keyword argument ["\'](\w+)["\']',
+                0.85,
+                "Call with function and argument",
+            ),
+            (r'Import with (?:module )?["\']([^"\']+)["\']', 0.7, "Import with module"),
+            (r'Import matching ["\']([^"\']+)["\']', 0.7, "Import matching pattern"),
+            (r"For with nested For", 0.85, "For with nested For"),
+            (r"While with nested While", 0.9, "While with nested While"),
+            (r"AsyncFor with nested AsyncFor", 0.85, "AsyncFor with nested AsyncFor"),
+            (r"Try with more than one ExceptHandler", 0.8, "Try with multiple exceptions"),
+            (r'Try with bare ["\']except:?[\'"]?', 0.85, "Try with bare except"),
+            (
+                r'FunctionDef with name (?:containing|starting with) ["\'](\w+)["\']',
+                0.75,
+                "FunctionDef with specific name",
+            ),
+            (r'ClassDef with name ending in ["\'](\w+)["\']', 0.8, "ClassDef with name ending in"),
+            (r'FunctionDef with decorator ["\']@(\w+)["\']', 0.85, "FunctionDef with decorator"),
+            (
+                r'FunctionDef with body containing only ["\'](\w+)["\']',
+                0.75,
+                "FunctionDef with simple body",
+            ),
+            (
+                r'FunctionDef with parameter default ["\'](\S+)["\']',
+                0.9,
+                "FunctionDef with mutable default",
+            ),
+            (r'Import with alias ["\'](\w+ import \w+ as \w+)["\']', 0.65, "Import with alias"),
+            (r'Import matching ["\']import \*["\']', 0.9, "Import star"),
+            (
+                r"FunctionDef with (?:no return|without return) annotations",
+                0.75,
+                "FunctionDef without return annotations",
+            ),
         ]
 
         for pattern, weight, desc in ast_keywords:
             # Check if pattern appears in system prompt
             if re.search(pattern, system_prompt, re.IGNORECASE):
-                patterns.append({
-                    'type': 'ast',
-                    'pattern': desc,
-                    'language': 'python',
-                    'weight': weight
-                })
+                patterns.append(
+                    {"type": "ast", "pattern": desc, "language": "python", "weight": weight}
+                )
 
         return patterns
 
     def _extract_file_path_patterns(
-        self,
-        system_prompt: str,
-        agent: BaseReviewerAgent
+        self, system_prompt: str, agent: BaseReviewerAgent
     ) -> List[Dict[str, Any]]:
         """Extract file path patterns from system prompt.
 
@@ -371,21 +396,17 @@ class DocGenAgent:
             pattern_str = match.group(1)
 
             # Only include if it looks like a glob pattern
-            if '*' in pattern_str or '/' in pattern_str:
+            if "*" in pattern_str or "/" in pattern_str:
                 # Determine weight based on pattern
                 weight = 0.7
-                if '**' in pattern_str:
+                if "**" in pattern_str:
                     weight = 0.8
-                if pattern_str.startswith('**/'):
+                if pattern_str.startswith("**/"):
                     weight = 0.75
 
                 # Avoid duplicates
-                if not any(p['pattern'] == pattern_str for p in patterns):
-                    patterns.append({
-                        'type': 'file_path',
-                        'pattern': pattern_str,
-                        'weight': weight
-                    })
+                if not any(p["pattern"] == pattern_str for p in patterns):
+                    patterns.append({"type": "file_path", "pattern": pattern_str, "weight": weight})
 
         return patterns
 
@@ -407,44 +428,65 @@ class DocGenAgent:
 
         # Look for specific content patterns
         content_indicators = [
-            (r'(?:password|secret|token|api_key)\s*[=:]', 0.95, r'password\\s*[=:]|secret\\s*[=:]|token\\s*[=:]|api_key\\s*[=:]'),
-            (r'AWS_[A-Z_]+|PRIVATE_KEY', 0.95, r'AWS_[A-Z_]+|PRIVATE_KEY'),
-            (r'eval\s*\(', 0.95, r'eval\s*\('),
-            (r'exec\s*\(', 0.95, r'exec\s*\('),
-            (r'pickle\.loads\s*\(', 0.9, r'pickle\.loads\s*\('),
-            (r'yaml\.load\s*\(', 0.9, r'yaml\.load\s*\('),
-            (r'subprocess\.\w+\([^)]*shell\s*=\s*True', 0.95, r'subprocess\.\w+\([^)]*shell\s*=\s*True'),
-            (r'subprocess\.\w+\([^)]*shell\s*=\s*True', 0.95, r'subprocess\.\w+\([^)]*shell\s*=\s*True'),
-            (r'os\.system\s*\(', 0.95, r'os\.system\s*\('),
-            (r'cursor\.execute\s*\([^)]*%[^)]*\)', 0.9, r'cursor\.execute\s*\([^)]*%'),
-            (r'cursor\.execute\s*\([^)]*\.format', 0.9, r'cursor\.execute\s*\([^)]*\.format'),
-            (r'except\s*:\s*pass', 0.85, r'except\s*:\s*pass'),
-            (r'import\s+pickle|from\s+pickle\s+import', 0.8, r'import\s+pickle|from\s+pickle\s+import'),
-            (r'NotImplementedError', 0.85, r'NotImplementedError'),
-            (r'TODO|FIXME|XXX', 0.6, r'TODO|FIXME|XXX'),
-            (r'\.\s*pass\s*$', 0.75, r'\.\s*pass\s*$'),
-            (r'def\s+\w+\([^)]*\):\s*return\s+None', 0.7, r'def\s+\w+\([^)]*\):\s*return\s+None'),
-            (r'version\s*=\s*["\'][\d\.]+\.\d+\.\\d+["\']', 0.9, r'version\s*=\s*["\'][\d\.]+\.\d+\.\\d+["\']'),
-            (r'for\s+\w+\s+in\s+[^:]+:\s*for\s+\w+\s+in\s+', 0.9, r'for\s+\w+\s+in\s+[^:]+:\s*for\s+\w+\s+in\s+'),
-            (r'while\s+\w+:\s*while\s+\w+:', 0.9, r'while\s+\w+:\s*while\s+\w+:'),
-            (r'@\w+|@tenacity', 0.85, r'@retry|@tenacity'),
-            (r'@deprecated', 0.9, r'@deprecated'),
-            (r'warnings\.warn', 0.8, r'warnings\.warn'),
-            (r'BREAKING|breaking', 0.85, r'BREAKING|breaking'),
-            (r'deprecated|DEPRECATED', 0.85, r'deprecated|DEPRECATED'),
+            (
+                r"(?:password|secret|token|api_key)\s*[=:]",
+                0.95,
+                r"password\\s*[=:]|secret\\s*[=:]|token\\s*[=:]|api_key\\s*[=:]",
+            ),
+            (r"AWS_[A-Z_]+|PRIVATE_KEY", 0.95, r"AWS_[A-Z_]+|PRIVATE_KEY"),
+            (r"eval\s*\(", 0.95, r"eval\s*\("),
+            (r"exec\s*\(", 0.95, r"exec\s*\("),
+            (r"pickle\.loads\s*\(", 0.9, r"pickle\.loads\s*\("),
+            (r"yaml\.load\s*\(", 0.9, r"yaml\.load\s*\("),
+            (
+                r"subprocess\.\w+\([^)]*shell\s*=\s*True",
+                0.95,
+                r"subprocess\.\w+\([^)]*shell\s*=\s*True",
+            ),
+            (
+                r"subprocess\.\w+\([^)]*shell\s*=\s*True",
+                0.95,
+                r"subprocess\.\w+\([^)]*shell\s*=\s*True",
+            ),
+            (r"os\.system\s*\(", 0.95, r"os\.system\s*\("),
+            (r"cursor\.execute\s*\([^)]*%[^)]*\)", 0.9, r"cursor\.execute\s*\([^)]*%"),
+            (r"cursor\.execute\s*\([^)]*\.format", 0.9, r"cursor\.execute\s*\([^)]*\.format"),
+            (r"except\s*:\s*pass", 0.85, r"except\s*:\s*pass"),
+            (
+                r"import\s+pickle|from\s+pickle\s+import",
+                0.8,
+                r"import\s+pickle|from\s+pickle\s+import",
+            ),
+            (r"NotImplementedError", 0.85, r"NotImplementedError"),
+            (r"TODO|FIXME|XXX", 0.6, r"TODO|FIXME|XXX"),
+            (r"\.\s*pass\s*$", 0.75, r"\.\s*pass\s*$"),
+            (r"def\s+\w+\([^)]*\):\s*return\s+None", 0.7, r"def\s+\w+\([^)]*\):\s*return\s+None"),
+            (
+                r'version\s*=\s*["\'][\d\.]+\.\d+\.\\d+["\']',
+                0.9,
+                r'version\s*=\s*["\'][\d\.]+\.\d+\.\\d+["\']',
+            ),
+            (
+                r"for\s+\w+\s+in\s+[^:]+:\s*for\s+\w+\s+in\s+",
+                0.9,
+                r"for\s+\w+\s+in\s+[^:]+:\s*for\s+\w+\s+in\s+",
+            ),
+            (r"while\s+\w+:\s*while\s+\w+:", 0.9, r"while\s+\w+:\s*while\s+\w+:"),
+            (r"@\w+|@tenacity", 0.85, r"@retry|@tenacity"),
+            (r"@deprecated", 0.9, r"@deprecated"),
+            (r"warnings\.warn", 0.8, r"warnings\.warn"),
+            (r"BREAKING|breaking", 0.85, r"BREAKING|breaking"),
+            (r"deprecated|DEPRECATED", 0.85, r"deprecated|DEPRECATED"),
             (r'\*\s+["\']', 0.9, r'\*\s+["\']'),
-            (r'.{120,}', 0.7, r'.{120,}'),
+            (r".{120,}", 0.7, r".{120,}"),
         ]
 
         for pattern, weight, regex in content_indicators:
             # Check if pattern appears in system prompt
             if re.search(pattern, system_prompt, re.IGNORECASE):
-                patterns.append({
-                    'type': 'content',
-                    'pattern': regex,
-                    'language': 'python',
-                    'weight': weight
-                })
+                patterns.append(
+                    {"type": "content", "pattern": regex, "language": "python", "weight": weight}
+                )
 
         return patterns
 
@@ -476,34 +518,38 @@ class DocGenAgent:
         json_schema_removal_patterns = [
             r'\{[^}]*"title"[^}]*\}',
             r'"title":\s*"[^"]*",\s*"type"',
-            r'CRITICAL RULES:.*?EXAMPLE VALID OUTPUT:',
+            r"CRITICAL RULES:.*?EXAMPLE VALID OUTPUT:",
         ]
         for pattern in json_schema_removal_patterns:
-            prompt_without_schema = re.sub(pattern, '', prompt_without_schema, flags=re.DOTALL)
+            prompt_without_schema = re.sub(pattern, "", prompt_without_schema, flags=re.DOTALL)
 
         # Extract bullet points under specific sections
         # Matches: "Blocking conditions:\n- plaintext secrets..."
         section_bullets_patterns = [
-            (r'Blocking conditions:(.*?)(?=\n[A-Z]|\n---|\Z)', 0),
-            (r'You specialize in:(.*?)(?=\n[A-Z]|\n---|\Z)', 0),
-            (r'Checks you may request:(.*?)(?=\n[A-Z]|\n---|\Z)', 0),
-            (r'High-signal file patterns:(.*?)(?=\n[A-Z]|\n---|\Z)', 0),
+            (r"Blocking conditions:(.*?)(?=\n[A-Z]|\n---|\Z)", 0),
+            (r"You specialize in:(.*?)(?=\n[A-Z]|\n---|\Z)", 0),
+            (r"Checks you may request:(.*?)(?=\n[A-Z]|\n---|\Z)", 0),
+            (r"High-signal file patterns:(.*?)(?=\n[A-Z]|\n---|\Z)", 0),
         ]
 
         for section_pattern, _ in section_bullets_patterns:
-            for match in re.finditer(section_pattern, prompt_without_schema, re.IGNORECASE | re.DOTALL):
+            for match in re.finditer(
+                section_pattern, prompt_without_schema, re.IGNORECASE | re.DOTALL
+            ):
                 section_content = match.group(1)
-                bullet_points = re.findall(r'^-\s+(.+)$', section_content, re.MULTILINE)
+                bullet_points = re.findall(r"^-\s+(.+)$", section_content, re.MULTILINE)
                 for point in bullet_points:
                     point_clean = point.strip()
                     if point_clean and len(point_clean) > 10:
                         heuristics.append(point_clean)
 
         # Extract questions from "must answer:" sections
-        must_answer_pattern = r'must answer:(.*?)(?=\n[A-Z]|\n---|\Z)'
-        for match in re.finditer(must_answer_pattern, prompt_without_schema, re.IGNORECASE | re.DOTALL):
+        must_answer_pattern = r"must answer:(.*?)(?=\n[A-Z]|\n---|\Z)"
+        for match in re.finditer(
+            must_answer_pattern, prompt_without_schema, re.IGNORECASE | re.DOTALL
+        ):
             section_content = match.group(1)
-            numbered_questions = re.findall(r'^\d+\)\s+(.+)$', section_content, re.MULTILINE)
+            numbered_questions = re.findall(r"^\d+\)\s+(.+)$", section_content, re.MULTILINE)
             for question in numbered_questions:
                 question_clean = question.strip()
                 if question_clean and len(question_clean) > 10:
@@ -511,9 +557,9 @@ class DocGenAgent:
 
         # Heuristic indicators
         heuristic_patterns = [
-            r'Look for\s+([^.!?]+)',
-            r'Check for\s+([^.!?]+)',
-            r'Verify\s+([^.!?]+)',
+            r"Look for\s+([^.!?]+)",
+            r"Check for\s+([^.!?]+)",
+            r"Verify\s+([^.!?]+)",
         ]
 
         for pattern in heuristic_patterns:
@@ -524,9 +570,9 @@ class DocGenAgent:
 
         # Look for "should"/"recommend"/"consider" patterns
         should_recommend_consider_patterns = [
-            r'\bshould\s+([^.!?]+)',
-            r'\brecommend(?:s|ed|ing)?\s+([^.!?]+)',
-            r'\bconsider\s+([^.!?]+)',
+            r"\bshould\s+([^.!?]+)",
+            r"\brecommend(?:s|ed|ing)?\s+([^.!?]+)",
+            r"\bconsider\s+([^.!?]+)",
         ]
 
         for pattern in should_recommend_consider_patterns:
@@ -534,9 +580,9 @@ class DocGenAgent:
                 heuristic = match.group(1).strip()
                 if heuristic and len(heuristic) > 10 and len(heuristic) < 200:
                     # Add appropriate prefix
-                    if 'should' in match.group(0).lower():
+                    if "should" in match.group(0).lower():
                         heuristics.append(f"Should {heuristic}")
-                    elif 'recommend' in match.group(0).lower():
+                    elif "recommend" in match.group(0).lower():
                         heuristics.append(f"Consider {heuristic}")
                     else:
                         heuristics.append(heuristic)
@@ -554,63 +600,65 @@ class DocGenAgent:
         if not unique_heuristics:
             # Get agent name for fallback
             default_heuristics = {
-                'security': [
+                "security": [
                     "Check for insecure imports (pickle, eval, exec, marshal, shelve)",
                     "Verify proper authentication and authorization checks",
                     "Look for SQL injection vulnerabilities in database queries",
                 ],
-                'architecture': [
+                "architecture": [
                     "Check for circular dependencies between modules",
                     "Look for god objects with too many responsibilities",
                     "Verify dependency injection patterns are consistent",
                 ],
-                'documentation': [
+                "documentation": [
                     "Check for missing docstrings on public functions/classes",
                     "Verify README reflects current behavior and features",
                     "Look for changes that require configuration documentation updates",
                 ],
-                'linting': [
+                "linting": [
                     "Check for mutable default arguments (= [], = {})",
                     "Look for type hints coverage on public APIs",
                     "Verify import ordering and grouping",
                 ],
-                'telemetry': [
+                "telemetry": [
                     "Check for secrets/PII being logged in error messages",
                     "Look for critical paths with no error logging or metrics",
                     "Verify retry loops have limits and logging for visibility",
                 ],
-                'unit_tests': [
+                "unit_tests": [
                     "Check for tests with time dependencies (need mocking)",
                     "Look for tests using random (need seeding for determinism)",
                     "Verify assertions are specific (not just assert True)",
                 ],
-                'diff_scoper': [
+                "diff_scoper": [
                     "Classify diff risk based on lines changed (>500 lines = high risk)",
                     "Look for deletions of classes/functions (breaking changes)",
                     "Check for changes to critical paths (auth, payments, core logic)",
                 ],
-                'requirements': [
+                "requirements": [
                     "Compare implementation to PR description/ticket requirements",
                     "Check for acceptance criteria coverage",
                     "Look for incomplete implementations (NotImplementedError, pass)",
                 ],
-                'performance': [
+                "performance": [
                     "Look for nested loops (O(n^2) complexity)",
                     "Check for N+1 query patterns (queries inside loops)",
                     "Verify retry logic has exponential backoff and max attempts",
                 ],
-                'dependencies': [
+                "dependencies": [
                     "Check for new dependencies added without justification",
                     "Verify license compatibility (avoid GPL/AGPL if proprietary)",
                     "Look for loosened version pins (reproducibility risk)",
                 ],
-                'changelog': [
+                "changelog": [
                     "Check for breaking changes without migration notes",
                     "Verify version bump matches change scope (major/minor/patch)",
                     "Look for user-visible behavior changes without changelog entry",
                 ],
             }
-            unique_heuristics = default_heuristics.get(agent_name, ["Review code changes for relevant patterns"])
+            unique_heuristics = default_heuristics.get(
+                agent_name, ["Review code changes for relevant patterns"]
+            )
 
         return unique_heuristics[:15]  # Limit to 15 heuristics
 
@@ -627,14 +675,14 @@ class DocGenAgent:
 
         # Required agents (core reviewers)
         required_agents = {
-            'architecture',
-            'security',
-            'linting',
-            'diff_scoper',
-            'requirements',
+            "architecture",
+            "security",
+            "linting",
+            "diff_scoper",
+            "requirements",
         }
 
-        return 'required' if agent_name in required_agents else 'optional'
+        return "required" if agent_name in required_agents else "optional"
 
     def _generate_yaml_frontmatter(
         self,
@@ -642,7 +690,7 @@ class DocGenAgent:
         agent_type: str,
         patterns: List[Dict[str, Any]],
         heuristics: List[str],
-        prompt_hash: str
+        prompt_hash: str,
     ) -> str:
         """Generate YAML frontmatter for documentation.
 
@@ -656,32 +704,31 @@ class DocGenAgent:
         Returns:
             YAML frontmatter string
         """
-        lines = ['---', f'agent: {agent_name}', f'agent_type: {agent_type}',
-                 'version: 1.0.0']
+        lines = ["---", f"agent: {agent_name}", f"agent_type: {agent_type}", "version: 1.0.0"]
 
         # Generated timestamp
-        generated_at = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-        lines.append(f'generated_at: {generated_at}')
-        lines.append(f'prompt_hash: {prompt_hash}')
-        lines.append('patterns:')
+        generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        lines.append(f"generated_at: {generated_at}")
+        lines.append(f"prompt_hash: {prompt_hash}")
+        lines.append("patterns:")
 
         # Add patterns
         for pattern in patterns:
-            lines.append(f'  - type: {pattern["type"]}')
+            lines.append(f"  - type: {pattern['type']}")
             lines.append(f'    pattern: "{pattern["pattern"]}"')
-            if 'language' in pattern:
-                lines.append(f'    language: {pattern["language"]}')
-            lines.append(f'    weight: {pattern["weight"]}')
+            if "language" in pattern:
+                lines.append(f"    language: {pattern['language']}")
+            lines.append(f"    weight: {pattern['weight']}")
 
-        lines.append('heuristics:')
+        lines.append("heuristics:")
 
         # Add heuristics
         for heuristic in heuristics:
             lines.append(f'  - "{heuristic}"')
 
-        lines.append('---')
+        lines.append("---")
 
-        return '\\n'.join(lines)
+        return "\\n".join(lines)
 
     def _generate_full_documentation(
         self,
@@ -689,7 +736,7 @@ class DocGenAgent:
         frontmatter: str,
         system_prompt: str,
         patterns: List[Dict[str, Any]],
-        heuristics: List[str]
+        heuristics: List[str],
     ) -> str:
         """Generate full documentation content.
 
@@ -703,133 +750,145 @@ class DocGenAgent:
         Returns:
             Full documentation content
         """
-        lines = [frontmatter, '']
+        lines = [frontmatter, ""]
 
         # Add overview section
-        title = f'# {agent_name.replace("_", " ").title()} Reviewer Entry Points'
+        title = f"# {agent_name.replace('_', ' ').title()} Reviewer Entry Points"
         lines.append(title)
-        lines.append('')
-        lines.append('This document defines entry points for {} reviewer agent to use when determining which code to analyze in PR reviews.'.format(
-            agent_name.replace("_", " ")
-        ))
-        lines.append('')
+        lines.append("")
+        lines.append(
+            "This document defines entry points for {} reviewer agent to use when determining which code to analyze in PR reviews.".format(
+                agent_name.replace("_", " ")
+            )
+        )
+        lines.append("")
 
         # Add overview
-        lines.append('## Overview')
-        lines.append('')
+        lines.append("## Overview")
+        lines.append("")
 
         # Extract specialization from system prompt
-        specialize_match = re.search(r'You specialize in:\s*\n\s*([^\n]+)', system_prompt)
+        specialize_match = re.search(r"You specialize in:\s*\n\s*([^\n]+)", system_prompt)
         if specialize_match:
-            lines.append(f'The {agent_name.replace("_", " ")} reviewer specializes in:')
-            lines.append('')
+            lines.append(f"The {agent_name.replace('_', ' ')} reviewer specializes in:")
+            lines.append("")
             specialization = specialize_match.group(1).strip()
-            lines.append(f'- {specialization}')
-            lines.append('')
+            lines.append(f"- {specialization}")
+            lines.append("")
 
         # Group patterns by type
-        ast_patterns = [p for p in patterns if p['type'] == 'ast']
-        file_path_patterns = [p for p in patterns if p['type'] == 'file_path']
-        content_patterns = [p for p in patterns if p['type'] == 'content']
+        ast_patterns = [p for p in patterns if p["type"] == "ast"]
+        file_path_patterns = [p for p in patterns if p["type"] == "file_path"]
+        content_patterns = [p for p in patterns if p["type"] == "content"]
 
         # Add AST patterns section
         if ast_patterns:
-            lines.append('### AST Patterns (High Weight: 0.7-0.95)')
-            lines.append('')
-            lines.append('AST patterns match against abstract syntax tree of Python code.')
-            lines.append('')
+            lines.append("### AST Patterns (High Weight: 0.7-0.95)")
+            lines.append("")
+            lines.append("AST patterns match against abstract syntax tree of Python code.")
+            lines.append("")
 
-            high_weight = [p for p in ast_patterns if p['weight'] >= 0.9]
-            medium_high = [p for p in ast_patterns if 0.8 <= p['weight'] < 0.9]
-            medium = [p for p in ast_patterns if p['weight'] < 0.8]
+            high_weight = [p for p in ast_patterns if p["weight"] >= 0.9]
+            medium_high = [p for p in ast_patterns if 0.8 <= p["weight"] < 0.9]
+            medium = [p for p in ast_patterns if p["weight"] < 0.8]
 
             if high_weight:
-                lines.append('**High-weight patterns (0.9+):**')
+                lines.append("**High-weight patterns (0.9+):**")
                 for p in high_weight:
                     lines.append(f"- {p['pattern']}")
-                lines.append('')
+                lines.append("")
 
             if medium_high:
-                lines.append('**Medium-high patterns (0.8-0.9):**')
+                lines.append("**Medium-high patterns (0.8-0.9):**")
                 for p in medium_high:
                     lines.append(f"- {p['pattern']}")
-                lines.append('')
+                lines.append("")
 
             if medium:
-                lines.append('**Medium patterns (0.7-0.8):**')
+                lines.append("**Medium patterns (0.7-0.8):**")
                 for p in medium:
                     lines.append(f"- {p['pattern']}")
-                lines.append('')
+                lines.append("")
 
         # Add file path patterns section
         if file_path_patterns:
-            lines.append('### File Path Patterns (Weight: 0.7-0.8)')
-            lines.append('')
-            lines.append('File path patterns match against changed file paths using glob patterns.')
-            lines.append('')
+            lines.append("### File Path Patterns (Weight: 0.7-0.8)")
+            lines.append("")
+            lines.append("File path patterns match against changed file paths using glob patterns.")
+            lines.append("")
 
             for p in file_path_patterns[:10]:
                 lines.append(f"- `{p['pattern']}` (weight: {p['weight']})")
-            lines.append('')
+            lines.append("")
 
         # Add content patterns section
         if content_patterns:
-            lines.append('### Content Patterns (Weight: 0.7-0.95)')
-            lines.append('')
-            lines.append('Content patterns use regex to search for specific strings in file contents.')
-            lines.append('')
+            lines.append("### Content Patterns (Weight: 0.7-0.95)")
+            lines.append("")
+            lines.append(
+                "Content patterns use regex to search for specific strings in file contents."
+            )
+            lines.append("")
 
-            high_weight = [p for p in content_patterns if p['weight'] >= 0.9]
-            medium = [p for p in content_patterns if p['weight'] < 0.9]
+            high_weight = [p for p in content_patterns if p["weight"] >= 0.9]
+            medium = [p for p in content_patterns if p["weight"] < 0.9]
 
             if high_weight:
-                lines.append('**High-weight patterns (0.9+):**')
+                lines.append("**High-weight patterns (0.9+):**")
                 for p in high_weight:
                     lines.append(f"- `{p['pattern']}`")
-                lines.append('')
+                lines.append("")
 
             if medium:
-                lines.append('**Medium patterns (0.7-0.9):**')
+                lines.append("**Medium patterns (0.7-0.9):**")
                 for p in medium:
                     lines.append(f"- `{p['pattern']}`")
-                lines.append('')
+                lines.append("")
 
         # Add usage section
-        lines.append('## Usage During Review')
-        lines.append('')
-        lines.append('1. When a PR is received, {} reviewer loads this document'.format(
-            agent_name.replace("_", " ")
-        ))
-        lines.append('2. For each pattern, reviewer searches changed files')
-        lines.append('3. Matches are collected and weighted by relevance')
-        lines.append('4. Top matches are included in the LLM context for analysis')
-        lines.append('5. Verification evidence is attached to `ReviewOutput.extra_data["verification"]`')
-        lines.append('')
+        lines.append("## Usage During Review")
+        lines.append("")
+        lines.append(
+            "1. When a PR is received, {} reviewer loads this document".format(
+                agent_name.replace("_", " ")
+            )
+        )
+        lines.append("2. For each pattern, reviewer searches changed files")
+        lines.append("3. Matches are collected and weighted by relevance")
+        lines.append("4. Top matches are included in the LLM context for analysis")
+        lines.append(
+            '5. Verification evidence is attached to `ReviewOutput.extra_data["verification"]`'
+        )
+        lines.append("")
 
         # Add heuristics section
         if heuristics:
-            lines.append('## Heuristics for LLM')
-            lines.append('')
-            lines.append('The heuristics list provides guidance to the LLM when analyzing discovered entry points.')
-            lines.append('')
+            lines.append("## Heuristics for LLM")
+            lines.append("")
+            lines.append(
+                "The heuristics list provides guidance to the LLM when analyzing discovered entry points."
+            )
+            lines.append("")
 
             for heuristic in heuristics:
                 lines.append(f"- {heuristic}")
-            lines.append('')
+            lines.append("")
 
         # Add maintenance section
-        lines.append('## Maintenance')
-        lines.append('')
-        lines.append('This document should be regenerated when {} reviewer\'s system prompt changes to keep entry points in sync with the agent\'s focus.'.format(
-            agent_name.replace("_", " ")
-        ))
-        lines.append('')
-        lines.append('```bash')
-        lines.append(f'opencode review generate-docs --agent {agent_name}')
-        lines.append('```')
-        lines.append('')
+        lines.append("## Maintenance")
+        lines.append("")
+        lines.append(
+            "This document should be regenerated when {} reviewer's system prompt changes to keep entry points in sync with the agent's focus.".format(
+                agent_name.replace("_", " ")
+            )
+        )
+        lines.append("")
+        lines.append("```bash")
+        lines.append(f"opencode review generate-docs --agent {agent_name}")
+        lines.append("```")
+        lines.append("")
 
-        return '\\n'.join(lines)
+        return "\\n".join(lines)
 
     def _save_doc(self, output_path: Path, content: str) -> None:
         """Save documentation to file.
@@ -842,6 +901,6 @@ class DocGenAgent:
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Write content
-        output_path.write_text(content, encoding='utf-8')
+        output_path.write_text(content, encoding="utf-8")
 
         logger.info(f"Saved documentation to {output_path}")

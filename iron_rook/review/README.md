@@ -424,3 +424,495 @@ sequenceDiagram
     Harness->>Lead: Iterate with missing evidence
   end
 ```
+
+---
+
+## FSM Security Review - Detailed State Machine
+
+The security review agent implements a comprehensive FSM with 6 active phases, 3 terminal states, and robust error handling.
+
+```mermaid
+stateDiagram-v2
+    %% =========================
+    %% FSM Security Review States
+    %% =========================
+    
+    direction TB
+
+    state "Security Review FSM" as fsm {
+        [*] --> Intake: run_review() called
+        
+        %% =========================
+        %% Phase States
+        %% =========================
+        state Intake {
+            [*] --> ValidateContext
+            ValidateContext --> LoadPrompt
+            LoadPrompt --> ConstructMessage
+            ConstructMessage --> ExecutePhase
+            ExecutePhase --> ValidateOutput
+            ValidateOutput --> CheckBudget
+            
+            note right of ValidateContext
+                Required fields:
+                - pr_dict
+                - changes_list
+            end note
+            
+            note right of CheckBudget
+                MAX_TOOL_CALLS: 50
+                MAX_ITERATIONS: 5
+                MAX_SUBAGENTS: 5
+            end note
+        }
+
+        state Plan_Todos {
+            [*] --> ValidateContext
+            ValidateContext --> LoadPrompt
+            LoadPrompt --> ConstructMessage
+            ConstructMessage --> ExecutePhase
+            ExecutePhase --> ValidateOutput
+            ValidateOutput --> PopulateTodos
+            
+            note right of ValidateContext
+                Required fields:
+                - pr_dict
+                - changes_list
+                - intake_output
+            end note
+            
+            note right of PopulateTodos
+                Create SecurityTodo objects
+                from plan_todos data
+            end note
+        }
+
+        state Delegate {
+            [*] --> ValidateContext
+            ValidateContext --> LoadPrompt
+            LoadPrompt --> ConstructMessage
+            ConstructMessage --> ExecutePhase
+            ExecutePhase --> ValidateOutput
+            
+            note right of ValidateContext
+                Required fields:
+                - pr_dict
+                - todos
+            end note
+            
+            note right of ExecutePhase
+                Generate subagent requests
+                for delegated todos
+            end note
+        }
+
+        state Collect {
+            [*] --> ValidateContext
+            ValidateContext --> LoadPrompt
+            LoadPrompt --> ConstructMessage
+            ConstructMessage --> ExecutePhase
+            ExecutePhase --> ValidateOutput
+            
+            note right of ValidateContext
+                Required fields:
+                - pr_dict
+                - delegate_output
+                - todos
+            end note
+            
+            note right of ExecutePhase
+                Validate subagent results
+                Mark TODO status
+            end note
+        }
+
+        state Consolidate {
+            [*] --> ValidateContext
+            ValidateContext --> LoadPrompt
+            LoadPrompt --> ConstructMessage
+            ConstructMessage --> ExecutePhase
+            ExecutePhase --> ValidateOutput
+            
+            note right of ValidateContext
+                Required fields:
+                - pr_dict
+                - collect_output
+                - todos
+            end note
+            
+            note right of ExecutePhase
+                Merge findings
+                De-duplicate
+                Synthesize summary
+            end note
+        }
+
+        state Evaluate {
+            [*] --> ValidateContext
+            ValidateContext --> LoadPrompt
+            LoadPrompt --> ConstructMessage
+            ConstructMessage --> ExecutePhase
+            ExecutePhase --> ValidateOutput
+            
+            note right of ValidateContext
+                Required fields:
+                - pr_dict
+                - consolidate_output
+                - todos
+            end note
+            
+            note right of ExecutePhase
+                Assess severity
+                Generate risk assessment
+                Build final report
+            end note
+        }
+
+        %% =========================
+        %% Terminal States
+        %% =========================
+        state Done {
+            [*] --> BuildFinalReport
+            BuildFinalReport --> ReturnReport
+            
+            note right of ReturnReport
+                Final SecurityReviewReport:
+                - findings by severity
+                - risk_assessment
+                - evidence_index
+                - actions (required/suggested)
+                - confidence (0.0-1.0)
+            end note
+        }
+
+        state Stopped_Budget {
+            [*] --> SetStopReason
+            SetStopReason --> BuildPartialReport
+            
+            note right of BuildPartialReport
+                Partial report with:
+                - current phase
+                - iterations
+                - stop_reason = "stopped_budget"
+            end note
+        }
+
+        state Stopped_Human {
+            [*] --> SetStopReason
+            SetStopReason --> BuildPartialReport
+            
+            note right of BuildPartialReport
+                Partial report with:
+                - current phase
+                - iterations
+                - stop_reason = "stopped_human"
+            end note
+        }
+
+        %% =========================
+        %% Valid Transitions (per FSM_TRANSITIONS)
+        %% =========================
+        Intake --> Plan_Todos: next_phase_request = "plan_todos"
+        
+        Plan_Todos --> Delegate: next_phase_request = "delegate"
+        
+        Delegate --> Collect: next_phase_request = "collect"
+        Delegate --> Consolidate: next_phase_request = "consolidate"
+        Delegate --> Evaluate: next_phase_request = "evaluate"
+        Delegate --> Done: next_phase_request = "done"
+        
+        Collect --> Consolidate: next_phase_request = "consolidate"
+        Collect --> Evaluate: next_phase_request = "evaluate"
+        
+        Consolidate --> Evaluate: next_phase_request = "evaluate"
+        
+        Evaluate --> Done: next_phase_request = "done"
+
+        %% =========================
+        %% Stop Gate Transitions (any phase)
+        %% =========================
+        Intake --> Stopped_Budget: next_phase_request = "stopped_budget"
+        Intake --> Stopped_Human: next_phase_request = "stopped_human"
+        Plan_Todos --> Stopped_Budget: next_phase_request = "stopped_budget"
+        Plan_Todos --> Stopped_Human: next_phase_request = "stopped_human"
+        Delegate --> Stopped_Budget: next_phase_request = "stopped_budget"
+        Delegate --> Stopped_Human: next_phase_request = "stopped_human"
+        Collect --> Stopped_Budget: next_phase_request = "stopped_budget"
+        Collect --> Stopped_Human: next_phase_request = "stopped_human"
+        Consolidate --> Stopped_Budget: next_phase_request = "stopped_budget"
+        Consolidate --> Stopped_Human: next_phase_request = "stopped_human"
+        Evaluate --> Stopped_Budget: next_phase_request = "stopped_budget"
+        Evaluate --> Stopped_Human: next_phase_request = "stopped_human"
+
+        Done --> [*]: Review complete
+        Stopped_Budget --> [*]: Partial report returned
+        Stopped_Human --> [*]: Partial report returned
+    }
+
+    %% =========================
+    %% Execution Path Decision (AgentRuntime vs Direct LLM)
+    %% =========================
+    state "Execution Path" as exec_path {
+        [*] --> CheckRuntime
+        CheckRuntime --> AgentRuntimePath: agent_runtime is not None
+        CheckRuntime --> DirectLLMPath: agent_runtime is None
+        
+        state AgentRuntimePath {
+            [*] --> GetSession
+            GetSession --> ExecuteAgent
+            ExecuteAgent --> ExtractResponse
+            ExtractResponse --> ParseJSON
+            ParseJSON --> [*]
+            
+            note right of GetSession
+                session_id = "security_review_fsm"
+                session_manager.get_session()
+            end note
+            
+            note right of ExecuteAgent
+                agent_runtime.execute_agent(
+                    agent_name,
+                    session_id,
+                    user_message
+                )
+            end note
+        }
+        
+        state DirectLLMPath {
+            [*] --> CreateLLMClient
+            CreateLLMClient --> GetDefaultAccount
+            GetDefaultAccount --> CompleteRequest
+            CompleteRequest --> ExtractResponse
+            ExtractResponse --> StripMarkdown
+            StripMarkdown --> ParseJSON
+            ParseJSON --> [*]
+            
+            note right of CreateLLMClient
+                LLMClient(
+                    provider_id,
+                    model,
+                    api_key
+                )
+            end note
+            
+            note right of CompleteRequest
+                temperature = 0.3
+                system_prompt + user_message
+            end note
+            
+            note right of StripMarkdown
+                Handle ```json...``` wrapping
+                Extract JSON content
+            end note
+        }
+    }
+
+    %% =========================
+    %% Error Handling Flow
+    %% =========================
+    state "Error Handling" as error_flow {
+        [*] --> ExecutePhase
+        ExecutePhase --> PhaseOutputReturned: Phase successful
+        ExecutePhase --> NoneReturned: Phase failed (None)
+        ExecutePhase --> BudgetExceeded: Budget exceeded
+        ExecutePhase --> RuntimeError: Runtime error
+        ExecutePhase --> JSONDecodeError: Invalid JSON
+        ExecutePhase --> ValidationError: Pydantic validation fail
+        ExecutePhase --> FSMPhaseError: Invalid transition
+        ExecutePhase --> MissingContextError: Missing required fields
+        ExecutePhase --> MissingPromptError: Missing phase prompt
+        
+        NoneReturned --> BuildPartialReport
+        BudgetExceeded --> BuildPartialReport
+        RuntimeError --> BuildPartialReport
+        JSONDecodeError --> InvalidPhaseOutputError
+        ValidationError --> BuildPartialReport
+        FSMPhaseError --> RaiseError
+        MissingContextError --> RaiseError
+        MissingPromptError --> RaiseError
+        
+        BuildPartialReport --> [*]
+        RaiseError --> [*]
+        
+        note right of BuildPartialReport
+            stop_reason includes:
+            - "phase_name_failed"
+            - "budget_exceeded"
+            - "validation_failed"
+            - "malformed_output"
+        end note
+        
+        note right of RaiseError
+            Explicit errors:
+            - FSMPhaseError (invalid transition)
+            - MissingPhaseContextError (missing fields)
+            - MissingPhasePromptError (missing prompt section)
+            - InvalidPhaseOutputError (JSON parsing failed)
+            - BudgetExceededError (budget limits hit)
+        end note
+    }
+
+    %% =========================
+    %% Phase Context Validation
+    %% =========================
+    state "PhaseContext Validation" as context_val {
+        [*] --> PhaseContext: Create PhaseContext object
+        
+        PhaseContext --> ValidateIntake: phase = "intake"
+        PhaseContext --> ValidatePlanTodos: phase = "plan_todos"
+        PhaseContext --> ValidateDelegate: phase = "delegate"
+        PhaseContext --> ValidateCollect: phase = "collect"
+        PhaseContext --> ValidateConsolidate: phase = "consolidate"
+        PhaseContext --> ValidateEvaluate: phase = "evaluate"
+        PhaseContext --> UnknownPhase: phase not recognized
+        
+        ValidateIntake --> CheckFields: Required: pr_dict, changes_list
+        ValidatePlanTodos --> CheckFields: Required: pr_dict, changes_list, intake_output
+        ValidateDelegate --> CheckFields: Required: pr_dict, todos
+        ValidateCollect --> CheckFields: Required: pr_dict, delegate_output, todos
+        ValidateConsolidate --> CheckFields: Required: pr_dict, collect_output, todos
+        ValidateEvaluate --> CheckFields: Required: pr_dict, consolidate_output, todos
+        
+        CheckFields --> AllPresent: All fields exist and not None
+        CheckFields --> MissingFields: Any field missing or None
+        
+        AllPresent --> [*]
+        MissingFields --> MissingPhaseContextError
+        UnknownPhase --> ValueError
+        
+        MissingPhaseContextError --> [*]
+        ValueError --> [*]
+        
+        note right of MissingPhaseContextError
+            "Missing required fields for phase 'X': A, B, C. 
+             Required fields: [list]"
+        end note
+    }
+
+    %% =========================
+    %% Transition Validation Logic
+    %% =========================
+    state "Transition Validation" as trans_val {
+        [*] --> CheckNextPhaseRequest
+        CheckNextPhaseRequest --> IsNone: next_phase_request is None
+        CheckNextPhaseRequest --> NotString: not isinstance(str)
+        CheckNextPhaseRequest --> NotValidValue: not in valid_phases
+        CheckNextPhaseRequest --> ValidValue: in valid_phases
+        
+        IsNone --> FSMPhaseError: "Phase X returned None for next_phase_request"
+        NotString --> FSMPhaseError: "Invalid type for next_phase_request"
+        NotValidValue --> FSMPhaseError: "Unexpected next_phase_request"
+        
+        ValidValue --> IsStopState: In (stopped_budget, stopped_human)
+        ValidValue --> IsDone: == "done"
+        ValidValue --> IsRegularPhase: Other valid phase
+        
+        IsStopState --> SetStopPhase
+        SetStopPhase --> SetStopReason
+        SetStopReason --> [*]
+        
+        IsDone --> ValidateDoneTransition
+        ValidateDoneTransition --> Allowed: Allowed from current phase
+        ValidateDoneTransition --> NotAllowed: Not allowed from current phase
+        
+        Allowed --> SetDonePhase
+        SetDonePhase --> SetStopReason
+        SetStopReason --> [*]
+        
+        NotAllowed --> FSMPhaseError: "Invalid transition from X to done"
+        
+        IsRegularPhase --> CheckFSMTransitions
+        CheckFSMTransitions --> InAllowedList: In FSM_TRANSITIONS[from_phase]
+        CheckFSMTransitions --> NotInAllowedList: Not in FSM_TRANSITIONS[from_phase]
+        
+        InAllowedList --> UpdatePhase
+        UpdatePhase --> IncrementIterations
+        IncrementIterations --> [*]
+        
+        NotInAllowedList --> FSMPhaseError: "Invalid transition from X to Y"
+        
+        note right of FSM_TRANSITIONS
+            {
+                "intake": ["plan_todos"],
+                "plan_todos": ["delegate"],
+                "delegate": ["collect", "consolidate", "evaluate", "done"],
+                "collect": ["consolidate"],
+                "consolidate": ["evaluate"],
+                "evaluate": ["done"]
+            }
+        end note
+    }
+
+    %% =========================
+    %% Session Lifecycle
+    %% =========================
+    state "Session Management" as session_lifecycle {
+        [*] --> GetSession
+        GetSession --> SessionExists: session already exists
+        GetSession --> CreateSession: session not exists
+        
+        SessionExists --> UseExistingSession
+        CreateSession --> UseNewSession
+        
+        UseExistingSession --> ExecutePhase
+        UseNewSession --> ExecutePhase
+        
+        ExecutePhase --> PhaseComplete: Phase completed successfully
+        ExecutePhase --> PhaseFailed: Phase failed with error
+        
+        PhaseComplete --> ReleaseSession
+        PhaseFailed --> ReleaseSession
+        
+        ReleaseSession --> [*]
+        
+        note right of GetSession
+            session_manager.get_session(
+                "security_review_fsm"
+            )
+        end note
+        
+        note right of ReleaseSession
+            session.release_session(session_id)
+            Must be called in all paths
+        end note
+    }
+
+    %% =========================
+    %% Connections between subsystems
+    %% =========================
+    fsm --> exec_path: Uses _execute_phase()
+    exec_path --> error_flow: Error paths
+    fsm --> context_val: Uses _validate_phase_context()
+    fsm --> trans_val: Uses _transition_to_phase()
+    fsm --> session_lifecycle: Session lifecycle
+```
+
+### Key FSM Components
+
+**States (9 total)**
+- **Active Phases (6)**: `intake`, `plan_todos`, `delegate`, `collect`, `consolidate`, `evaluate`
+- **Terminal States (3)**: `done`, `stopped_budget`, `stopped_human`
+
+**Valid Transitions**
+```python
+FSM_TRANSITIONS = {
+    "intake": ["plan_todos"],
+    "plan_todos": ["delegate"],
+    "delegate": ["collect", "consolidate", "evaluate", "done"],
+    "collect": ["consolidate"],
+    "consolidate": ["evaluate"],
+    "evaluate": ["done"],
+}
+```
+
+**Budget Limits**
+- `MAX_TOOL_CALLS`: 50
+- `MAX_ITERATIONS`: 5
+- `MAX_SUBAGENTS`: 5
+
+**Error Types**
+- `FSMPhaseError`: Invalid phase transition
+- `BudgetExceededError`: Budget limits hit
+- `InvalidPhaseOutputError`: JSON/schema validation failed
+- `MissingPhaseContextError`: Required fields missing
+- `MissingPhasePromptError`: Phase prompt section missing/empty

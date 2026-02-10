@@ -1,4 +1,5 @@
 """Sandboxed subprocess execution framework for review agents."""
+
 from __future__ import annotations
 
 import asyncio
@@ -82,7 +83,12 @@ class ExecutionResult(pd.BaseModel):
 class CommandExecutor:
     """Execute commands with security guardrails and resource limits."""
 
-    def __init__(self, allowed_tools: List[str] | None = None, repo_root: Path | None = None, max_concurrent: int = 4):
+    def __init__(
+        self,
+        allowed_tools: List[str] | None = None,
+        repo_root: Path | None = None,
+        max_concurrent: int = 4,
+    ) -> None:
         self.allowed_tools = allowed_tools or DEFAULT_ALLOWED_TOOLS
         self.repo_root = Path(repo_root) if repo_root else Path.cwd()
         self._semaphore = asyncio.Semaphore(max_concurrent)
@@ -130,11 +136,15 @@ class CommandExecutor:
         except ValueError:
             return False
 
-    async def execute(self, command: str, timeout: int = 30, cwd: str = ".", allow_fix: bool = False) -> ExecutionResult:
+    async def execute(
+        self, command: str, timeout: int = 30, cwd: str = ".", allow_fix: bool = False
+    ) -> ExecutionResult:
         if not self.validate_command(command):
             command_start = command.strip().split()[0]
             if command_start not in self.allowed_tools:
-                raise SecurityError(f"Tool '{command_start}' is not in whitelist: {self.allowed_tools}")
+                raise SecurityError(
+                    f"Tool '{command_start}' is not in whitelist: {self.allowed_tools}"
+                )
 
             for blocked in BLOCKED_SHELL_CHARACTERS:
                 if blocked in command:

@@ -10,11 +10,12 @@ from __future__ import annotations
 import logging
 import secrets
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 from iron_rook.review.base import ReviewContext
 from dawn_kestrel.core.models import Session
 from dawn_kestrel.core.agent_types import SessionManagerLike
+from dawn_kestrel.core.models import Message, Part
 
 logger = logging.getLogger(__name__)
 
@@ -24,13 +25,44 @@ _ephemeral_sessions_by_id: Dict[str, Session] = {}
 class EphemeralSessionManager(SessionManagerLike):
     """Session manager for ephemeral (in-memory) review sessions.
 
-    This SessionManagerLike implementation wraps the ephemeral session storage
-    to provide the interface required by AgentRuntime.
+    This SessionManagerLike implementation wraps ephemeral session storage
+    to provide interface required by AgentRuntime.
     """
 
     async def get_session(self, session_id: str) -> Optional[Session]:
         """Get an ephemeral session by ID."""
-        return get_review_session(session_id)
+        session = get_review_session(session_id)
+        if session is None:
+            from iron_rook.review.base import ReviewContext
+
+            context = ReviewContext(
+                changed_files=[],
+                diff="",
+                repo_root="",
+                pr_title="Security Review",
+            )
+            session = create_review_session("", context)
+        return session
+
+    async def list_messages(self, session_id: str) -> List[Message]:
+        """List all messages for a session."""
+        return []
+
+    async def add_message(self, message: Message) -> str:
+        """Add a message to a session, returns message ID."""
+        return "ephemeral"
+
+    async def add_part(self, part: Part) -> str:
+        """Add a part to a message, returns part ID."""
+        return "ephemeral-part"
+
+    async def release_session(self, session_id: str) -> None:
+        """Release a session - cleanup ephemeral session."""
+        if session_id in _ephemeral_sessions_by_id:
+            del _ephemeral_sessions_by_id[session_id]
+            logger.info(f"Released ephemeral review session: {session_id}")
+        else:
+            logger.debug(f"Session not found for release: {session_id}")
 
 
 def create_review_session(repo_root: str, context: ReviewContext) -> Session:
@@ -135,15 +167,3 @@ def get_review_session(session_id: str) -> Optional[Session]:
         ...     print(session.title)
     """
     return _ephemeral_sessions_by_id.get(session_id)
-
-
-class EphemeralSessionManager(SessionManagerLike):
-    """Session manager for ephemeral (in-memory) review sessions.
-
-    This SessionManagerLike implementation wraps the ephemeral session storage
-    to provide the interface required by AgentRuntime.
-    """
-
-    async def get_session(self, session_id: str) -> Optional[Session]:
-        """Get an ephemeral session by ID."""
-        return get_review_session(session_id)

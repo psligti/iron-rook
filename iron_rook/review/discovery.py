@@ -8,6 +8,7 @@ This module provides intelligent discovery of code entry points using multiple s
 
 Discovery supports timeout protection and graceful fallback behavior.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -36,6 +37,7 @@ class EntryPoint:
         pattern_type: Type of pattern that discovered this (ast, content, file_path)
         evidence: Raw evidence from discovery tool
     """
+
     file_path: str
     line_number: Optional[int]
     description: str
@@ -95,7 +97,9 @@ class EntryPointDiscovery:
         "php": ".php",
     }
 
-    def __init__(self, timeout_seconds: int = DISCOVERY_TIMEOUT, tool_registry: Optional[ToolRegistry] = None):
+    def __init__(
+        self, timeout_seconds: int = DISCOVERY_TIMEOUT, tool_registry: Optional[ToolRegistry] = None
+    ) -> None:
         """Initialize entry point discovery.
 
         Args:
@@ -209,10 +213,10 @@ class EntryPointDiscovery:
 
         ast_patterns = patterns.get("ast", [])
         if ast_patterns:
-            logger.info(f"[{agent_name}] Running AST pattern discovery ({len(ast_patterns)} patterns)")
-            ast_results = await self._discover_ast_patterns(
-                ast_patterns, repo_root, changed_files
+            logger.info(
+                f"[{agent_name}] Running AST pattern discovery ({len(ast_patterns)} patterns)"
             )
+            ast_results = await self._discover_ast_patterns(ast_patterns, repo_root, changed_files)
             all_entry_points.extend(ast_results)
 
         content_patterns = patterns.get("content", [])
@@ -235,9 +239,7 @@ class EntryPointDiscovery:
             )
             all_entry_points.extend(file_path_results)
 
-        all_entry_points.sort(
-            key=lambda ep: (-ep.weight, ep.file_path, ep.line_number or 0)
-        )
+        all_entry_points.sort(key=lambda ep: (-ep.weight, ep.file_path, ep.line_number or 0))
 
         logger.info(
             f"[{agent_name}] Discovery complete: {len(all_entry_points)} entry points "
@@ -290,7 +292,7 @@ class EntryPointDiscovery:
             pattern = {}
             for line in pattern_yaml.split("\n"):
                 if ":" in line:
-                    key, value = line.split(":",1)
+                    key, value = line.split(":", 1)
                     pattern[key.strip()] = value.strip()
 
             pattern_type = pattern.get("type")
@@ -355,7 +357,7 @@ class EntryPointDiscovery:
                 in_array = False
 
             if ":" in line:
-                key, value = line.split(":",1)
+                key, value = line.split(":", 1)
                 key = key.strip()
                 value = value.strip()
 
@@ -364,7 +366,7 @@ class EntryPointDiscovery:
                     in_array = True
                     array_values = []
                 else:
-                    value = value.strip('"\'')
+                    value = value.strip("\"'")
                     frontmatter[key] = value
 
         if in_array:
@@ -408,7 +410,9 @@ class EntryPointDiscovery:
                 # Use ToolRegistry to execute ast_grep_search tool
                 tool = self.tool_registry.get("ast_grep_search")
                 if not tool:
-                    logger.warning("ast_grep_search tool not found in registry, skipping AST pattern discovery")
+                    logger.warning(
+                        "ast_grep_search tool not found in registry, skipping AST pattern discovery"
+                    )
                     break
 
                 # Create minimal ToolContext for tool execution
@@ -495,7 +499,9 @@ class EntryPointDiscovery:
                 # Use ToolRegistry to execute grep tool
                 tool = self.tool_registry.get("grep")
                 if not tool:
-                    logger.warning("grep tool not found in registry, skipping content pattern discovery")
+                    logger.warning(
+                        "grep tool not found in registry, skipping content pattern discovery"
+                    )
                     break
 
                 # Create minimal ToolContext for tool execution
@@ -567,7 +573,6 @@ class EntryPointDiscovery:
         Returns:
             List of EntryPoint objects from file path matches
         """
-        from fnmatch import fnmatch
 
         entry_points: List[EntryPoint] = []
 
@@ -609,6 +614,7 @@ class EntryPointDiscovery:
             True if file path matches pattern
         """
         from iron_rook.review.base import _match_glob_pattern
+
         return _match_glob_pattern(file_path, pattern)
 
     def _get_changed_files_for_language(self, changed_files: List[str], language: str) -> List[str]:
@@ -626,7 +632,9 @@ class EntryPointDiscovery:
             messages=[],
         )
 
-    async def _execute_tool(self, tool: Any, args: Dict[str, Any], ctx: ToolContext) -> ToolResult:
+    async def _execute_tool(
+        self, tool: object, args: Dict[str, Any], ctx: ToolContext
+    ) -> ToolResult:
         """Execute a tool supporting both object.execute(...) and callable mocks."""
         result: Any
         execute = getattr(tool, "execute", None)
@@ -634,7 +642,7 @@ class EntryPointDiscovery:
         if callable(execute):
             result = await execute(args=args, ctx=ctx)
         elif callable(tool):
-            result = await tool(args=args, ctx=ctx)
+            result = await tool(args=args, ctx=ctx)  # type: ignore[call-top-callable]
         else:
             raise TypeError("Tool is not executable")
 
@@ -642,7 +650,7 @@ class EntryPointDiscovery:
             result = await result
 
         if not isinstance(result, ToolResult) and callable(tool):
-            fallback = await tool(args=args, ctx=ctx)
+            fallback = await tool(args=args, ctx=ctx)  # type: ignore[call-top-callable]
             if asyncio.iscoroutine(fallback):
                 fallback = await fallback
             result = fallback

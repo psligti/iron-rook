@@ -106,7 +106,7 @@ class BoundsExceededError(Exception):
         limit: int | None = None,
         actual: int | None = None,
         metric: str | None = None,
-    ):
+    ) -> None:
         self.message = message
         self.limit = limit
         self.actual = actual
@@ -144,7 +144,7 @@ class DiffSummary(pd.BaseModel):
     model_config = pd.ConfigDict(extra="forbid")
 
     @pd.model_validator(mode="after")
-    def enforce_hunk_limit_per_file(self):
+    def enforce_hunk_limit_per_file(self) -> "PullRequestHunks":
         """
         Enforce MAX_HUNKS_PER_FILE per file.
 
@@ -192,7 +192,7 @@ class CandidateFiles(pd.BaseModel):
     model_config = pd.ConfigDict(extra="forbid")
 
     @pd.model_validator(mode="after")
-    def enforce_file_count_limit(self):
+    def enforce_file_count_limit(self) -> "PullRequestHunks":
         """
         Enforce MAX_CANDIDATE_FILES.
 

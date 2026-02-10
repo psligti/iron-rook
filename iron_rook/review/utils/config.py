@@ -3,6 +3,7 @@
 This module provides tools for discovering and parsing configuration files
 from Python repositories, including linting, testing, and type checking tools.
 """
+
 from __future__ import annotations
 
 import logging
@@ -27,7 +28,7 @@ class RepoConfigDiscovery:
         >>> test_cmds = discovery.discover_test_commands()
     """
 
-    def __init__(self, repo_root: str = "."):
+    def __init__(self, repo_root: str = ".") -> None:
         """Initialize config discovery for a repository.
 
         Args:
@@ -368,6 +369,7 @@ class RepoConfigDiscovery:
 
         try:
             import yaml
+
             workflow = yaml.safe_load(content)
         except ImportError:
             result["workflows"][workflow_path.stem] = {

@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import List, Callable, Literal, Optional
+from typing import List, Callable
 
 from iron_rook.review.base import BaseReviewerAgent, ReviewContext
 from dawn_kestrel.agents.runtime import AgentRuntime
 from dawn_kestrel.core.agent_types import SessionManagerLike
 from dawn_kestrel.agents.registry import AgentRegistry
 from iron_rook.review.contracts import (
-    DelegationResult,
     Finding,
     MergeGate,
     MergePolicy,
@@ -36,7 +35,7 @@ from iron_rook.review.utils.executor import (
 from iron_rook.review.utils.session_helper import (
     create_review_session,
 )
-from iron_rook.review.utils.agent_runtime_bridge import (
+from iron_rook.review.utils.result_transformers import (
     agent_result_to_review_output,
 )
 from dawn_kestrel.tools import create_builtin_registry
@@ -59,7 +58,7 @@ class PRReviewOrchestrator:
         agent_runtime: AgentRuntime | None = None,
         session_manager: SessionManagerLike | None = None,
         agent_registry: AgentRegistry | None = None,
-    ):
+    ) -> None:
         self.subagents = subagents
         self.command_executor = command_executor or CommandExecutor()
         self.stream_manager = stream_manager or ReviewStreamManager()
@@ -146,7 +145,9 @@ class PRReviewOrchestrator:
 
         for idx, agent in enumerate(self.subagents):
 
-            async def run_with_timeout(current_agent=agent):
+            async def run_with_timeout(
+                current_agent: BaseReviewerAgent = agent,
+            ) -> ReviewOutput | None:
                 async with semaphore:
                     agent_name = current_agent.get_agent_name()
                     logger.info(
@@ -186,14 +187,21 @@ class PRReviewOrchestrator:
                             logger.info(f"[VERBOSE] [{agent_name}]   Head ref: {context.head_ref}")
                             logger.info(f"[VERBOSE] [{agent_name}]   PR title: {context.pr_title}")
 
-                        if self.use_agent_runtime:
+                        prefers_direct_review = (
+                            hasattr(current_agent, "prefers_direct_review")
+                            and current_agent.prefers_direct_review()
+                        )
+
+                        if self.use_agent_runtime and not prefers_direct_review:
                             logger.info(f"[{agent_name}] Using AgentRuntime execution path")
                             result = await asyncio.wait_for(
                                 self._execute_via_agent_runtime(agent_name, context),
                                 timeout=inputs.timeout_seconds,
                             )
                         else:
-                            logger.info(f"[{agent_name}] Calling LLM (legacy path)...")
+                            logger.info(
+                                f"[{agent_name}] Calling agent review method (direct path)..."
+                            )
                             result = await asyncio.wait_for(
                                 current_agent.review(context), timeout=inputs.timeout_seconds
                             )
@@ -404,18 +412,18 @@ class PRReviewOrchestrator:
         """
         if not self.agent_runtime:
             raise RuntimeError(
-                f"AgentRuntime not configured. Set agent_runtime parameter when "
-                f"use_agent_runtime=True"
+                "AgentRuntime not configured. Set agent_runtime parameter when "
+                "use_agent_runtime=True"
             )
         if not self.session_manager:
             raise RuntimeError(
-                f"SessionManager not configured. Set session_manager parameter when "
-                f"use_agent_runtime=True"
+                "SessionManager not configured. Set session_manager parameter when "
+                "use_agent_runtime=True"
             )
         if not self.agent_registry:
             raise RuntimeError(
-                f"AgentRegistry not configured. Set agent_registry parameter when "
-                f"use_agent_runtime=True"
+                "AgentRegistry not configured. Set agent_registry parameter when "
+                "use_agent_runtime=True"
             )
 
         logger.info(f"[{agent_name}] Executing via AgentRuntime with ephemeral session")
@@ -586,7 +594,7 @@ class PRReviewOrchestrator:
 
         for request in filter_requests:
 
-            async def run_delegated_agent(req=request):
+            async def run_delegated_agent(req: DelegationRequest = request) -> ReviewOutput | None:
                 async with semaphore:
                     if not self.budget_tracker.can_execute_command():
                         logger.warning(f"Concurrency limit reached for {req.agent}, skipping")

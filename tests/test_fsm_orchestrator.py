@@ -6,13 +6,13 @@ from iron_rook.review.contracts import (
     PullRequestChangeList,
 )
 from iron_rook.review.fsm_security_orchestrator import SecurityReviewOrchestrator
-from typing import Any
+from typing import Any, Dict, List
 
 
 class MockAgentResponse:
     """Mock response from agent execution."""
 
-    content = '{"phase": "test_phase", "data": {}, "next_phase_request": "test_next"}'
+    content = '{"phase": "intake", "data": {}, "next_phase_request": "plan_todos"}'
 
 
 class MockLLMResponse:
@@ -26,8 +26,8 @@ class MockAgentRuntime:
     """Mock dawn-kestrel AgentRuntime for testing."""
 
     def __init__(self: "MockAgentRuntime") -> None:
-        self.sessions: dict[str, object] = {}
-        self.execute_calls: list[dict[str, object]] = []
+        self.sessions: Dict[str, object] = {}
+        self.execute_calls: List[Dict[str, object]] = []
 
     async def get_session(self, session_id: str) -> object:
         """Get or create a mock session."""
@@ -52,7 +52,18 @@ class MockAgentRuntime:
             }
         )
 
-        return MagicMock(content=MockAgentResponse.content)
+        # Return appropriate response based on call count to simulate FSM phases
+        call_count = len(self.execute_calls)
+        responses = [
+            '{"phase": "intake", "data": {"findings": []}, "next_phase_request": "plan_todos"}',
+            '{"phase": "plan_todos", "data": {"todos": []}, "next_phase_request": "delegate"}',
+            '{"phase": "delegate", "data": {"delegated": []}, "next_phase_request": "collect"}',
+            '{"phase": "collect", "data": {"collected": []}, "next_phase_request": "consolidate"}',
+            '{"phase": "consolidate", "data": {}, "next_phase_request": "evaluate"}',
+            '{"phase": "evaluate", "data": {"overall": "low"}, "next_phase_request": "done"}',
+        ]
+        response_content = responses[min(call_count - 1, len(responses) - 1)]
+        return MagicMock(content=response_content)
 
 
 @pytest.fixture
@@ -65,21 +76,24 @@ def mock_agent_runtime() -> MockAgentRuntime:
 def mock_session_manager() -> object:
     """Fixture providing mocked SessionManager."""
 
+    # Make release_session awaitable
+    async def mock_release_session(session_id: str) -> None:
+        """Mock async release_session."""
+        pass
+
     async def mock_get_session(session_id: str) -> object:
         """Mock async get_session."""
-        return MagicMock(
+        session_mock = MagicMock(
             id=session_id,
             list_messages=MagicMock(return_value=[]),
             add_message=MagicMock(),
             add_part=MagicMock(),
-            release_session=MagicMock(),
+            release_session=mock_release_session,
         )
+        return session_mock
 
-    manager = MagicMock(
-        **{
-            "get_session": mock_get_session,
-        }
-    )
+    manager = MagicMock()
+    manager.get_session = mock_get_session
     return manager
 
 
@@ -218,7 +232,7 @@ class TestSecurityReviewOrchestrator:
     ) -> None:
         """Test agent_runtime.execute_agent is called correctly."""
         orchestrator = SecurityReviewOrchestrator(
-            agent_runtime=None,
+            agent_runtime=mock_agent_runtime,
             session_manager=mock_session_manager,
             prompt_path=None,
         )
@@ -235,10 +249,13 @@ class TestSecurityReviewOrchestrator:
             assert call["agent_name"] == "security_review_fsm"
             session_id = call["session_id"]
 
-            if i < 4:
-                assert f"phase: {i + 1}" in str(call["user_message"])
-            else:
-                assert "Done" in str(call["user_message"])
+            # Verify user message contains expected fields (JSON format, not "phase: N" format)
+            assert '"pr"' in str(call["user_message"])
+            assert '"changes"' in str(call["user_message"])
+
+            # Later phases include additional context fields
+            if i >= 1:  # After intake, includes intake_output
+                assert '"intake_output"' in str(call["user_message"])
 
         mock_session_manager.get_session.assert_called()
         mock_session_manager.get_session.return_value.list_messages.assert_called_once()
@@ -253,7 +270,7 @@ class TestSecurityReviewOrchestrator:
     ) -> None:
         """Test subagent is dispatched and results collected."""
         orchestrator = SecurityReviewOrchestrator(
-            agent_runtime=None,
+            agent_runtime=mock_agent_runtime,
             session_manager=mock_session_manager,
             prompt_path=None,
         )
@@ -698,3 +715,179 @@ class TestJSONEnvelopeCompliance:
         assert valid_output.phase == "evaluate"
         assert valid_output.next_phase_request == "done"
         assert valid_output.data["confidence"] == 0.9
+
+
+class TestRetryPolicy:
+    """Test retry policy - bounded retry for transient, fail-fast for structural."""
+
+    @pytest.mark.asyncio
+    async def test_structural_errors_fail_fast_without_retry(
+        self: "TestRetryPolicy",
+        mock_session_manager: object,
+        sample_pr_input: PullRequestChangeList,
+    ) -> None:
+        """Test that structural errors fail immediately without retry."""
+        orchestrator = SecurityReviewOrchestrator(
+            agent_runtime=None,
+            session_manager=mock_session_manager,
+            prompt_path=None,
+        )
+
+        from iron_rook.review.fsm_security_orchestrator import StructuralError
+
+        # Mock a response that triggers structural error (missing required field)
+        from unittest.mock import MagicMock
+
+        call_count = {"count": 0}
+
+        async def mock_llm_complete(*args: object, **kwargs: object) -> object:
+            call_count["count"] += 1
+            response = MagicMock()
+            # Return output missing 'phase' field (structural error)
+            response.text = '{"data": {}, "next_phase_request": "plan_todos"}'
+            return response
+
+        import dawn_kestrel.llm
+
+        original_complete = dawn_kestrel.llm.LLMClient.complete
+        dawn_kestrel.llm.LLMClient.complete = mock_llm_complete
+
+        try:
+            result = await orchestrator.run_review(sample_pr_input)
+            assert result.fsm.phase == "intake"
+            assert "failed" in result.fsm.stop_reason.lower()
+            # Structural error should fail-fast - only 1 attempt, no retries
+            assert call_count["count"] == 1
+        finally:
+            dawn_kestrel.llm.LLMClient.complete = original_complete
+
+    @pytest.mark.asyncio
+    async def test_transient_errors_retry_up_to_3_then_stop(
+        self: "TestRetryPolicy",
+        mock_session_manager: object,
+        sample_pr_input: PullRequestChangeList,
+    ) -> None:
+        """Test that transient errors retry up to 3 times, then stop."""
+        orchestrator = SecurityReviewOrchestrator(
+            agent_runtime=None,
+            session_manager=mock_session_manager,
+            prompt_path=None,
+        )
+
+        # Mock a response that triggers transient error (runtime/network error)
+        from unittest.mock import MagicMock
+
+        call_count = {"count": 0}
+        fail_count = 3  # Fail first 3 attempts
+
+        async def mock_llm_complete(*args: object, **kwargs: object) -> object:
+            call_count["count"] += 1
+            response = MagicMock()
+
+            if call_count["count"] <= fail_count:
+                # Simulate transient network error (ConnectionError is transient)
+                raise ConnectionError("Network timeout")
+            else:
+                # Return valid response after failures
+                response.text = '{"phase": "intake", "data": {}, "next_phase_request": "done"}'
+                return response
+
+        import dawn_kestrel.llm
+
+        original_complete = dawn_kestrel.llm.LLMClient.complete
+        dawn_kestrel.llm.LLMClient.complete = mock_llm_complete
+
+        try:
+            result = await orchestrator.run_review(sample_pr_input)
+            # Should stop with stopped_retry_exhausted after max retries
+            assert result.fsm.phase == "stopped_retry_exhausted"
+            assert (
+                "transient" in result.fsm.stop_reason.lower()
+                or "retry" in result.fsm.stop_reason.lower()
+            )
+            # Transient error should retry exactly 4 times (1 initial + 3 retries)
+            assert call_count["count"] == 4
+        finally:
+            dawn_kestrel.llm.LLMClient.complete = original_complete
+
+    @pytest.mark.asyncio
+    async def test_bounded_retry_no_infinite_continuation(
+        self: "TestRetryPolicy",
+        mock_session_manager: object,
+        sample_pr_input: PullRequestChangeList,
+    ) -> None:
+        """Test that retry is bounded and never continues infinitely."""
+        orchestrator = SecurityReviewOrchestrator(
+            agent_runtime=None,
+            session_manager=mock_session_manager,
+            prompt_path=None,
+        )
+
+        from unittest.mock import MagicMock
+
+        call_count = {"count": 0}
+
+        async def mock_llm_complete(*args: object, **kwargs: object) -> object:
+            call_count["count"] += 1
+            # Always fail to test bounded retry prevents infinite loops
+            raise TimeoutError("Persistent timeout")
+
+        import dawn_kestrel.llm
+
+        original_complete = dawn_kestrel.llm.LLMClient.complete
+        dawn_kestrel.llm.LLMClient.complete = mock_llm_complete
+
+        try:
+            result = await orchestrator.run_review(sample_pr_input)
+            # Should stop with stopped_retry_exhausted
+            assert result.fsm.phase == "stopped_retry_exhausted"
+            # Bounded retry: max 4 attempts (1 initial + 3 retries)
+            assert call_count["count"] == 4
+        finally:
+            dawn_kestrel.llm.LLMClient.complete = original_complete
+
+    @pytest.mark.asyncio
+    async def test_classify_error_distinguishes_structural_from_transient(
+        self: "TestRetryPolicy",
+        mock_session_manager: object,
+        sample_pr_input: PullRequestChangeList,
+    ) -> None:
+        """Test that _classify_error correctly distinguishes error types."""
+        orchestrator = SecurityReviewOrchestrator(
+            agent_runtime=None,
+            session_manager=mock_session_manager,
+            prompt_path=None,
+        )
+
+        from iron_rook.review.fsm_security_orchestrator import (
+            StructuralError,
+            TransientError,
+            FSMPhaseError,
+        )
+        import json
+
+        # Test structural error classification
+        structural_error = FSMPhaseError("Invalid transition")
+        classified = orchestrator._classify_error(structural_error)
+        assert isinstance(classified, StructuralError)
+        assert "FSMPhaseError" in str(classified)
+
+        # Test transient error classification
+        transient_error = ConnectionError("Network timeout")
+        classified = orchestrator._classify_error(transient_error)
+        assert isinstance(classified, TransientError)
+        assert "ConnectionError" in str(classified)
+
+        # Test ValidationError is structural
+        try:
+            from iron_rook.review.contracts import PhaseOutput
+
+            PhaseOutput.model_validate({"invalid": "data"})
+        except Exception as e:
+            classified = orchestrator._classify_error(e)
+            assert isinstance(classified, StructuralError)
+
+        # Test JSONDecodeError is structural
+        json_error = json.JSONDecodeError("Invalid JSON", "", 0)
+        classified = orchestrator._classify_error(json_error)
+        assert isinstance(classified, StructuralError)
