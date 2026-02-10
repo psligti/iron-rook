@@ -1,0 +1,15 @@
+CLI Help Command Output:
+============================
+
+Command: iron-rook --help
+
+Result: SUCCESS - CLI help displayed correctly
+
+Output shows:
+- review command with all options
+- --agent option to run specific agent
+- --include-optional to include optional reviewers
+- --repo-root, --base-ref, --head-ref for repository
+- --output format options
+- --timeout for agent timeout
+- --verbose for detailed logging

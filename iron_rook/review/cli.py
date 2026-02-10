@@ -378,70 +378,27 @@ def review(
         from iron_rook.review.contracts import ReviewInputs
         from iron_rook.review.orchestrator import PRReviewOrchestrator
         from iron_rook.review.registry import ReviewerRegistry
-        from dawn_kestrel.agents.runtime import AgentRuntime
-        from dawn_kestrel.agents.builtin import Agent
-        from dawn_kestrel.agents.registry import AgentRegistry, create_agent_registry
-        from iron_rook.review.utils.session_helper import (
-            EphemeralSessionManager,
-        )
 
         setup_logging(verbose)
 
         available_agents = set(ReviewerRegistry.get_all_names())
         if agent and agent not in available_agents:
             names = ", ".join(sorted(available_agents))
-            # Show deprecation warning if user tries to use deprecated 'security' agent
-            if agent == "security":
-                console.print()
-                console.print("[yellow]WARNING: The 'security' agent is deprecated.[/yellow]")
-                console.print(
-                    "[yellow]Please use the FSM-based security reviewer instead via:[/yellow]"
-                )
-                console.print("[cyan]iron-rook --agent security-fsm[/cyan]")
-                console.print()
-                raise click.ClickException(f"Unknown agent '{agent}'. Available agents: {names}")
-
-        # Register security agent in shared AgentRegistry for AgentRuntime execution
-        SECURITY_REVIEWER_AGENT = Agent(
-            name="security",
-            description="Security reviewer with tool execution support",
-            mode="subagent",
-            native=False,
-            permission=[
-                {"permission": "todowrite", "pattern": "*", "action": "allow"},
-                {"permission": "todoread", "pattern": "*", "action": "allow"},
-                {"permission": "*", "pattern": "*", "action": "deny"},
-            ],
-        )
+            raise click.ClickException(f"Unknown agent '{agent}'. Available agents: {names}")
 
         if agent:
             subagents = [ReviewerRegistry.create_reviewer(agent)]
             console.print(f"[cyan]Running only '{agent}' agent...[/cyan]")
         else:
             subagents = get_subagents(include_optional)
-            console.print(f"[cyan]Running all {len(subagents)} agents...[/cyan]")
+        console.print(f"[cyan]Running all {len(subagents)} agents...[/cyan]")
 
         if verbose:
             log_verbose_subagent_info(subagents)
 
-        session_manager = EphemeralSessionManager()
-        agent_registry = create_agent_registry()
-
-        await agent_registry.register_agent(SECURITY_REVIEWER_AGENT)
-
         orchestrator = PRReviewOrchestrator(
             subagents=subagents,
-            use_agent_runtime=True,
-            agent_runtime=AgentRuntime(
-                agent_registry=agent_registry,
-                base_dir=repo_root,
-            ),
-            session_manager=session_manager,
-            agent_registry=agent_registry,
         )
-
-        if verbose:
-            await log_verbose_todos(str(repo_root))
 
         inputs = ReviewInputs(
             repo_root=str(repo_root),

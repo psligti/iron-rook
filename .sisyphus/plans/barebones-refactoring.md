@@ -1488,7 +1488,7 @@ Parallel Speedup: ~45% faster than sequential
 
 ---
 
-- [ ] 13. Simplify PRReviewOrchestrator
+- [x] 13. Simplify PRReviewOrchestrator
 
   **What to do**:
   - Review orchestrator after all removals (streaming, discovery, budget, dual paths, custom FSM)

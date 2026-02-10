@@ -12,7 +12,7 @@ via CLI: iron-rook --agent security-fsm
 """
 
 import warnings
-from typing import List
+from typing import List, Optional
 
 from iron_rook.review.base import BaseReviewerAgent, ReviewContext
 from iron_rook.review.contracts import ReviewOutput, Scope, MergeGate
@@ -26,7 +26,7 @@ class SecurityReviewer(BaseReviewerAgent):
     Use 'security-fsm' agent via CLI: iron-rook --agent security-fsm
     """
 
-    def __init__(self, verifier: FindingsVerifier | None = None) -> None:
+    def __init__(self, verifier: Optional[FindingsVerifier] = None) -> None:
         """Initialize deprecated SecurityReviewer."""
         warnings.warn(
             "SecurityReviewer is deprecated. Use the FSM-based security reviewer instead: "

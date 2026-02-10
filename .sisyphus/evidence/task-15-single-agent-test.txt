@@ -1,0 +1,25 @@
+Single Agent Test (Architecture):
+==================================
+
+Command: iron-rook --agent architecture --repo-root . --base-ref main --head-ref HEAD
+
+Result: SUCCESS
+
+Details:
+- Agent: architecture
+- LLM Provider: ProviderID.Z_AI_CODING_PLAN
+- LLM Model: glm-4.7
+- Dawn-kestrel Integration: WORKING
+- ReviewOutput: Returned successfully
+  - agent: "architecture"
+  - severity: "merge"
+  - findings: 0 findings
+  - merge_gate.decision: "approve"
+
+Log Summary:
+- Context built successfully
+- System prompt constructed (8607 chars)
+- LLM client initialized
+- HTTP connection to api.z.ai successful
+- JSON validation successful
+- Review completed in ~6 seconds

@@ -266,23 +266,31 @@ class ReviewerRegistry:
 def _register_default_reviewers() -> None:
     """Register all default reviewers at module import time."""
     from iron_rook.review.agents.security import SecurityReviewer
+    from iron_rook.review.agents.architecture import ArchitectureReviewer
+    from iron_rook.review.agents.documentation import DocumentationReviewer
+    from iron_rook.review.agents.telemetry import TelemetryMetricsReviewer
+    from iron_rook.review.agents.linting import LintingReviewer
+    from iron_rook.review.agents.unit_tests import UnitTestsReviewer
+    from iron_rook.review.agents.diff_scoper import DiffScoperReviewer
+    from iron_rook.review.agents.requirements import RequirementsReviewer
+    from iron_rook.review.agents.performance import PerformanceReliabilityReviewer
+    from iron_rook.review.agents.dependencies import DependencyLicenseReviewer
+    from iron_rook.review.agents.changelog import ReleaseChangelogReviewer
 
-    # Register core security reviewer (deprecated but still available for compatibility)
+    # Register core reviewers
     ReviewerRegistry.register("security", SecurityReviewer, is_core=True)
+    ReviewerRegistry.register("architecture", ArchitectureReviewer, is_core=True)
+    ReviewerRegistry.register("documentation", DocumentationReviewer, is_core=True)
+    ReviewerRegistry.register("telemetry", TelemetryMetricsReviewer, is_core=True)
+    ReviewerRegistry.register("linting", LintingReviewer, is_core=True)
+    ReviewerRegistry.register("unit_tests", UnitTestsReviewer, is_core=True)
 
-    # TEMPORARY: Removing other agents - breaking change
-    # They will be re-added later with FSM-style operation
-    # ReviewerRegistry.register("architecture", ArchitectureReviewer, is_core=True)
-    # ReviewerRegistry.register("documentation", DocumentationReviewer, is_core=True)
-    # ReviewerRegistry.register("telemetry", TelemetryMetricsReviewer, is_core=True)
-    # ReviewerRegistry.register("linting", LintingReviewer, is_core=True)
-    # ReviewerRegistry.register("unit_tests", UnitTestsReviewer, is_core=True)
-
-    # ReviewerRegistry.register("diff_scoper", DiffScoperReviewer, is_core=False)
-    # ReviewerRegistry.register("requirements", RequirementsReviewer, is_core=False)
-    # ReviewerRegistry.register("performance", PerformanceReliabilityReviewer, is_core=False)
-    # ReviewerRegistry.register("dependencies", DependencyLicenseReviewer, is_core=False)
-    # ReviewerRegistry.register("changelog", ReleaseChangelogReviewer, is_core=False)
+    # Register optional reviewers
+    ReviewerRegistry.register("diff_scoper", DiffScoperReviewer, is_core=False)
+    ReviewerRegistry.register("requirements", RequirementsReviewer, is_core=False)
+    ReviewerRegistry.register("performance", PerformanceReliabilityReviewer, is_core=False)
+    ReviewerRegistry.register("dependencies", DependencyLicenseReviewer, is_core=False)
+    ReviewerRegistry.register("changelog", ReleaseChangelogReviewer, is_core=False)
 
 
 _register_default_reviewers()

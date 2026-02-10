@@ -1,0 +1,70 @@
+TASK 14: Update CLI to Use Dawn-Kestrel Session - ANALYSIS
+==========================================================
+
+Current State Analysis (2026-02-10 13:30)
+-----------------------------------------
+
+CLI Imports:
+- from dawn_kestrel.storage.store import TodoStorage
+- from dawn_kestrel.core.settings import settings
+
+CLI Usage:
+- PRReviewOrchestrator(subagents=subagents,)
+
+Orchestrator Signature:
+- def __init__(
+    self,
+    subagents: List[BaseReviewerAgent],
+    command_executor: CommandExecutor | None = None,
+    merge_policy: MergePolicy | None = None,
+)
+
+NOT Found in CLI:
+- session_manager
+- AgentRuntime
+- agent_registry
+- from iron_rook.review.utils.session_helper
+
+Conclusion:
+------------
+✓ CLI already uses simplified PRReviewOrchestrator
+✓ Orchestrator uses direct agent.review() calls
+✓ No AgentRuntime integration
+✓ No SessionManager integration
+✓ No FSM orchestration
+
+Task 14 Requirements Obsolete:
+-----------------------------
+Task 14 requires:
+1. "Import dawn-kestrel SessionManager in CLI"
+2. "Replace orchestrator call with dawn-kestrel Session-based orchestration"
+3. "Create Session for FSM-based review (intake → plan → delegate → evaluate)"
+4. "Run agents via dawn-kestrel AgentRuntime with filtered tool registry"
+
+Why Obsolete:
+- FSM orchestrator removed in Task 10 (fsm_security_orchestrator.py deleted)
+- AgentRuntime removed in Task 8 (dual execution paths removed)
+- SessionManager removed in Task 8 (simplified to direct calls)
+- Orchestrator simplified in Tasks 9 and 13 (309 lines, 55% reduction)
+
+Current Architecture:
+-------------------
+Simple, direct approach:
+1. CLI creates PRReviewOrchestrator with subagents
+2. Orchestrator.run_review() runs agents in parallel
+3. Each agent.review(context) called directly
+4. Results aggregated by orchestrator
+
+This IS the "barebones" refactoring goal - removing complexity.
+
+Evidence from Previous Tasks:
+-----------------------------
+Task 8: "Removed dual execution paths from PRReviewOrchestrator"
+Task 10: "Removed Custom Security Review Orchestrator" (FSM)
+Task 13: "Orchestrator fully restored from zombie state" (309 lines)
+
+Recommendation:
+--------------
+Task 14 should be marked as OBSOLETE.
+The work was already completed in Tasks 8-13.
+Current CLI is the intended end state.

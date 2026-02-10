@@ -503,3 +503,73 @@ The orchestrator is now at its simplest form:
 2. **Plan adaptation**: The original plan mentioned AgentRuntime and FSM, but these were removed earlier. Adapted to verify current state instead.
 3. **Direct over abstract**: Direct agent.review() calls are cleaner than AgentRuntime wrapper when no orchestration is needed
 4. **Verification importance**: Comprehensive grep searches confirmed all old patterns were removed
+
+## Task 14: Update CLI to Use Dawn-Kestrel Session - OBSOLETE
+
+### Finding
+Task 14 requirements are **obsolete** - work already completed in Tasks 8-13.
+
+### What Task 14 Required
+1. "Import dawn-kestrel SessionManager in CLI"
+2. "Replace orchestrator call with dawn-kestrel Session-based orchestration"
+3. "Create Session for FSM-based review (intake → plan → delegate → evaluate)"
+4. "Run agents via dawn-kestrel AgentRuntime with filtered tool registry"
+5. "Ensure all 11 reviewers work with dawn-kestrel Session"
+
+### Why Task 14 is Obsolete
+The features Task 14 asks to integrate were **removed** in previous tasks:
+
+1. **FSM Orchestrator**: Removed in Task 10
+   - fsm_security_orchestrator.py deleted (1058 lines)
+   - security_fsm.py deleted (247 lines)
+   - No FSM-based review to orchestrate
+
+2. **AgentRuntime Integration**: Removed in Task 8
+   - Dual execution paths removed (AgentRuntime vs direct LLM)
+   - Standardized on direct agent.review() calls
+   - AgentRuntime parameter removed from orchestrator
+
+3. **SessionManager**: Removed in Task 8
+   - session_manager parameter removed from PRReviewOrchestrator
+   - Simplified to direct agent calls (no session tracking)
+
+4. **Orchestrator Simplified**: Tasks 9 and 13
+   - Reduced from 683 lines to 309 lines (55% reduction)
+   - Removed all complex orchestration logic
+   - Inline ReviewContext building
+   - Direct agent calls with semaphore limiting
+
+### Current CLI Architecture (Correct State)
+```
+CLI:
+  ├─ Imports: TodoStorage, settings (dawn_kestrel utilities only)
+  ├─ Creates: PRReviewOrchestrator(subagents=subagents,)
+  └─ Runs: await orchestrator.run_review(inputs)
+
+Orchestrator:
+  ├─ Accepts: subagents, command_executor, merge_policy
+  ├─ Runs: agents in parallel (semaphore=4)
+  ├─ Calls: agent.review(context) directly
+  └─ Returns: OrchestratorOutput with aggregated findings
+```
+
+### Key Insight
+The "barebones refactoring" goal was to **remove complexity**, not add dawn-kestrel integration. Tasks 8-13 successfully stripped down the system to its essence:
+
+- **Before**: Complex FSM orchestration, dual paths, session management
+- **After**: Simple direct agent calls, parallel execution, result aggregation
+
+This IS the intended end state. The task description appears to be based on an older version of the plan before the "Wave 2 bloat removal" and subsequent simplifications.
+
+### Evidence
+- CLI analysis: `.sisyphus/evidence/task-14-cli-analysis.txt`
+- Verification: `.sisyphus/evidence/task-14-verification.txt`
+- Previous task notes: Tasks 8, 10, 13 in this file
+
+### Recommendation
+Mark Task 14 as **OBSOLETE**. The work described in Task 14 was:
+1. Already removed in Tasks 8-13
+2. Contrary to the "barebones" refactoring goal
+3. Not needed for the simplified architecture
+
+The CLI and orchestrator are in the correct final state.
