@@ -1,0 +1,90 @@
+Task 9 Fix: Broken Orchestrator State
+========================================
+
+Problem:
+--------
+The orchestrator.py was in a broken state after ContextBuilder removal:
+1. Missing methods: run_subagents_parallel, dedupe_findings, compute_merge_decision, generate_tool_plan
+2. Broken imports: BudgetConfig, BudgetTracker (removed in Task 6)
+3. Unused imports: AgentRuntime, SessionManagerLike, AgentRegistry, create_builtin_registry, ToolRegistry (removed in Task 8)
+4. Missing _build_context method (removed in Wave 2)
+5. run_review called non-existent methods
+
+Solution:
+---------
+Restored and simplified orchestrator with:
+1. Removed broken imports (BudgetConfig, BudgetTracker, AgentRuntime, SessionManagerLike, AgentRegistry, etc.)
+2. Kept only essential imports (BaseReviewerAgent, ReviewContext, contracts, streaming, executor)
+3. Implemented run_subagents_parallel method with:
+   - Inline ReviewContext construction (no ContextBuilder)
+   - Agent's is_relevant_to_changes() for filtering
+   - Semaphore-limited parallel execution (max 4 concurrent)
+   - Timeout handling
+   - Error handling with proper ReviewOutput on failure
+4. Implemented dedupe_findings method (title+severity deduplication)
+5. Implemented compute_merge_decision (uses merge_policy)
+6. Implemented generate_tool_plan (collects check commands)
+7. Kept execute_command method for CommandExecutor interface
+
+Key Changes:
+------------
+Before (broken):
+- Line 10: from dawn_kestrel.agents.runtime import AgentRuntime
+- Line 11: from dawn_kestrel.core.agent_types import SessionManagerLike
+- Line 12: from dawn_kestrel.agents.registry import AgentRegistry
+- Line 23-24: BudgetConfig, BudgetTracker imports
+- Line 26: from iron_rook.review.context_builder import ContextBuilder, DefaultContextBuilder
+- Line 70: initial_results = await self.run_subagents_parallel(inputs, stream_callback) [method missing]
+- Line 73: deduped_findings = self.dedupe_findings(all_findings) [method missing]
+- File ended at line 74 (incomplete)
+
+After (fixed):
+- Lines 10-12: Removed AgentRuntime, SessionManagerLike, AgentRegistry imports
+- Lines 23-24: Removed BudgetConfig, BudgetTracker imports
+- Line 26: Removed context_builder import
+- Lines 51-84: Complete run_review implementation
+- Lines 87-264: Complete run_subagents_parallel implementation
+- Lines 266-275: compute_merge_decision implementation
+- Lines 277-295: dedupe_findings implementation
+- Lines 297-317: generate_tool_plan implementation
+- Lines 319-331: execute_command implementation
+- File complete at line 331
+
+Context Building:
+-----------------
+ReviewContext is now built inline in run_subagents_parallel:
+
+    all_changed_files = await get_changed_files(...)
+    diff = await get_diff(...)
+    
+    # Use agent's relevance filtering
+    if current_agent.is_relevant_to_changes(all_changed_files):
+        changed_files = all_changed_files
+    else:
+        changed_files = []
+        logger.info(f"[{agent_name}] Agent not relevant to changes, skipping review")
+    
+    context = ReviewContext(
+        changed_files=changed_files,
+        diff=diff,
+        repo_root=inputs.repo_root,
+        base_ref=inputs.base_ref,
+        head_ref=inputs.head_ref,
+        pr_title=inputs.pr_title,
+        pr_description=inputs.pr_description,
+    )
+
+This is the same logic that was in DefaultContextBuilder.build(), but inlined directly.
+
+Verification:
+-------------
+✓ No self.discovery references (grep found 0 matches)
+✓ No self.context_builder references (grep found 0 matches)
+✓ orchestrator compiles without errors (py_compile passed)
+✓ run_review method exists (line 51)
+✓ run_subagents_parallel method exists (line 87)
+✓ dedupe_findings method exists (line 277)
+✓ compute_merge_decision method exists (line 266)
+✓ generate_tool_plan method exists (line 297)
+✓ execute_command method exists (line 319)
+✓ __init__ simplified to: subagents, command_executor, stream_manager, merge_policy

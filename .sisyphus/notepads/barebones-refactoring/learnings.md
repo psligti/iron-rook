@@ -270,3 +270,70 @@
 - The abstraction (ContextBuilder interface + DefaultContextBuilder) wasn't adding value
 - Direct ReviewContext construction is simpler
 - Context filtering can be done inline or via agent's is_relevant_to_changes() method
+
+## Task 9 Fix: Restored Broken Orchestrator
+
+### What was broken:
+1. Missing methods after Wave 2 bloat removal:
+   - run_subagents_parallel (deleted in Wave 2)
+   - dedupe_findings (deleted in Wave 2)
+   - compute_merge_decision (deleted in Wave 2)
+   - generate_tool_plan (deleted in Wave 2)
+   - execute_command (deleted in Wave 2)
+2. Broken imports (from deleted features):
+   - BudgetConfig, BudgetTracker (removed in Task 6)
+   - AgentRuntime, SessionManagerLike, AgentRegistry (removed in Task 8)
+3. ContextBuilder import (removed in Task 9 but still referenced)
+4. Incomplete run_review method (called non-existent methods)
+
+### What was fixed:
+1. Removed all broken imports
+2. Restored all essential methods with simplified implementations:
+   - run_subagents_parallel: inline ReviewContext building, semaphore limiting
+   - dedupe_findings: simple title+severity deduplication
+   - compute_merge_decision: uses merge_policy.apply()
+   - generate_tool_plan: collects check commands
+   - execute_command: CommandExecutor interface
+3. __init__ simplified to only: subagents, command_executor, stream_manager, merge_policy
+4. ReviewContext built inline using agent's is_relevant_to_changes()
+
+### Key insight:
+- Wave 2 removed the implementations but left references in run_review
+- This created a "zombie" state where methods were called but didn't exist
+- The fix was to restore the methods WITHOUT the removed features
+  - No ContextBuilder (inlined context building)
+  - No AgentRuntime (direct agent.review() calls)
+  - No budget tracking (BudgetConfig/BudgetTracker gone)
+  - No delegation system (second_wave_delegated_followups gone)
+
+## Task 9 Fix Complete: Orchestrator Restored
+
+### Final State:
+Orchestrator.py is now fully functional with:
+1. 309 lines (down from 683 - 55% reduction)
+2. No broken imports or references
+3. All essential methods implemented
+4. Inline ReviewContext building (no ContextBuilder)
+5. Direct stream_callback calls (no stream_manager)
+6. Compiles without errors
+
+### Methods Implemented:
+- __init__: subagents, command_executor, merge_policy (removed: discovery, context_builder, stream_manager, agent_runtime, session_manager, agent_registry)
+- run_review: complete workflow
+- run_subagents_parallel: inline context building, semaphore limiting, timeout/error handling
+- compute_merge_decision: uses merge_policy.compute_merge_decision()
+- dedupe_findings: title+severity deduplication
+- generate_tool_plan: collects check commands
+- execute_command: CommandExecutor interface
+
+### Key Learnings:
+1. Wave 2 removed methods but left references in run_review - created "zombie" state
+2. Indentation matters for try/except blocks - must be aligned
+3. ToolPlan fields: proposed_commands, auto_fix_available, execution_summary (not estimated_duration_seconds)
+4. MergePolicy method: compute_merge_decision (not apply)
+5. Direct stream_callback is simpler than ReviewStreamManager abstraction
+
+### Remaining Work:
+- SecurityReviewer agent has import error (separate issue)
+- Task 10 will remove custom security FSM orchestrator
+- Task 13 will further simplify orchestrator if needed

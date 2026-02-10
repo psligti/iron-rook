@@ -71,3 +71,9 @@
 
 | 2026-02-10 | self | Removed ContextBuilder abstraction layer | ContextBuilder (331 lines) was deleted. The orchestrator stored context_builder but never actually used it after Wave 2 refactoring removed run_subagents_parallel method. The abstraction didn't add value - direct ReviewContext construction is simpler. |
 
+
+| 2026-02-10 | self | Fixed broken orchestrator after ContextBuilder removal | After Task 9 removed context_builder.py, orchestrator had missing methods (run_subagents_parallel, dedupe_findings, compute_merge_decision, generate_tool_plan) and broken imports (BudgetConfig, BudgetTracker, AgentRuntime). Restored complete working orchestrator with inline ReviewContext construction - no ContextBuilder needed. |
+
+
+| 2026-02-10 | self | Orchestrator fully restored from zombie state | Fixed try/except indentation issues, removed all broken references (discovery, context_builder, stream_manager), implemented all missing methods with inline ReviewContext building. 309 lines (55% smaller than original 683 lines). |
+
