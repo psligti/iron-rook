@@ -1,0 +1,30 @@
+CLI Verification Evidence
+=======================
+
+ContextBuilder Removal from Orchestrator:
+---------------------------------------
+
+Before (had context_builder):
+  - Line 26: from iron_rook.review.context_builder import ContextBuilder, DefaultContextBuilder
+  - Line 51: discovery: EntryPointDiscovery | None = None,
+  - Line 52: context_builder: ContextBuilder | None = None,
+  - Line 60: self.discovery = discovery or EntryPointDiscovery()
+  - Line 62: self.context_builder = context_builder or DefaultContextBuilder(self.discovery)
+
+After (all removed):
+  - No context_builder imports
+  - No discovery imports
+  - __init__ only has: subagents, command_executor, stream_manager, merge_policy
+  - No self.discovery or self.context_builder attributes
+
+Note:
+  - The CLI does not yet build ReviewContext directly because:
+    1. The orchestrator's run_subagents_parallel method was removed in Wave 2
+    2. The orchestrator is currently incomplete/broken
+    3. Task 13 (Simplify PRReviewOrchestrator) will fix the full execution flow
+    4. When that's done, ReviewContext will need to be built (either in CLI or orchestrator)
+
+Status:
+  - ContextBuilder file: DELETED ✓
+  - Orchestrator imports: CLEANED ✓
+  - Orchestrator __init__ parameters: CLEANED ✓

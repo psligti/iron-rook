@@ -249,3 +249,24 @@
 - Budget tracking code is deeply integrated in second_wave_delegated_followups method
 - Removing conditional blocks requires careful handling of indentation
 - File stability cannot be assumed during automated editing
+
+## Task 9: Inline ContextBuilder into CLI
+
+### What was done:
+1. Deleted `iron_rook/review/context_builder.py` file (331 lines)
+2. Removed context_builder imports from orchestrator.py
+3. Removed context_builder parameter from PRReviewOrchestrator.__init__
+4. Removed discovery parameter from PRReviewOrchestrator.__init__
+5. Removed self.discovery and self.context_builder attributes
+
+### Key finding:
+- The orchestrator was in a broken state before this task (Wave 2 removed run_subagents_parallel method)
+- ContextBuilder was stored but never actually used in the current code
+- The plan mentioned moving logic from `_build_context` but that method was already removed
+- CLI does not yet build ReviewContext directly because the full execution flow is broken
+- This will be addressed in Task 13 (Simplify PRReviewOrchestrator)
+
+### Why ContextBuilder was unnecessary:
+- The abstraction (ContextBuilder interface + DefaultContextBuilder) wasn't adding value
+- Direct ReviewContext construction is simpler
+- Context filtering can be done inline or via agent's is_relevant_to_changes() method

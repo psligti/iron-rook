@@ -1,0 +1,11 @@
+ContextBuilder Deletion Evidence
+=============================
+
+Command: git rm iron_rook/review/context_builder.py
+Output:
+  rm 'iron_rook/review/context_builder.py'
+
+Verification:
+  - context_builder.py status: DELETED
+  - orchestrator.py has NO context_builder references
+  - orchestrator.py has NO discovery references

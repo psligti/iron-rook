@@ -244,12 +244,3 @@ class SecurityFSMReviewer(BaseReviewerAgent):
                 ],
             ),
         )
-
-    def prefers_direct_review(self) -> bool:
-        """Return True to use direct review path.
-
-        The FSM orchestrator has its own AgentRuntime-first logic
-        and direct-LLM fallback, so it doesn't need the orchestrator's
-        AgentRuntime wrapper.
-        """
-        return True

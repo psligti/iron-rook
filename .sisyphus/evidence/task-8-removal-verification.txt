@@ -1,0 +1,34 @@
+Task 8: Remove Dual Execution Paths - Verification
+=====================================================
+
+Verification: use_agent_runtime removed
+----------------------------------------
+Command: grep -n "use_agent_runtime" iron_rook/review/orchestrator.py
+Result: PASS - use_agent_runtime not found (exit code 1)
+
+Verification: agent_runtime/session_manager/agent_registry removed
+----------------------------------------------------------------
+Command: grep -n "agent_runtime\|session_manager\|agent_registry" iron_rook/review/orchestrator.py
+Result: PASS - Parameters not found (exit code 1)
+
+Verification: prefers_direct_review removed from base.py
+------------------------------------------------------
+Command: grep -n "prefers_direct_review" iron_rook/review/base.py
+Result: PASS - prefers_direct_review not found in base.py (exit code 1)
+
+Verification: prefers_direct_review removed from agents/
+--------------------------------------------------------
+Command: grep -rn "prefers_direct_review" iron_rook/review/agents/*.py
+Result: PASS - prefers_direct_review not found in agents/ (exit code 1)
+
+Summary
+-------
+All dual execution paths have been successfully removed:
+- use_agent_runtime parameter removed from PRReviewOrchestrator.__init__
+- agent_runtime, session_manager, agent_registry parameters removed from __init__
+- Unused imports (AgentRuntime, SessionManagerLike, AgentRegistry) removed
+- prefers_direct_review() method removed from BaseReviewerAgent (base.py)
+- prefers_direct_review() method removed from security.py
+- prefers_direct_review() method removed from security_fsm.py
+
+The system now standardizes on AgentRuntime.execute_agent() for all reviewers.

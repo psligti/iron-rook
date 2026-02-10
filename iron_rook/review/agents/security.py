@@ -36,14 +36,6 @@ class SecurityReviewer(BaseReviewerAgent):
         )
         super().__init__(verifier)
 
-    def prefers_direct_review(self) -> bool:
-        """Prefer direct review without AgentRuntime.
-
-        Returns:
-            True - agent's review() method should be called directly
-        """
-        return True
-
     async def review(self, context: ReviewContext) -> ReviewOutput:
         """Perform security review (deprecated).
 

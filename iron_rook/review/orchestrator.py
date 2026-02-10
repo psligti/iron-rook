@@ -23,8 +23,6 @@ from iron_rook.review.contracts import (
     BudgetConfig,
     BudgetTracker,
 )
-from iron_rook.review.context_builder import ContextBuilder, DefaultContextBuilder
-from iron_rook.review.discovery import EntryPointDiscovery
 from iron_rook.review.streaming import ReviewStreamManager
 from iron_rook.review.utils.executor import (
     CommandExecutor,
@@ -48,25 +46,12 @@ class PRReviewOrchestrator:
         subagents: List[BaseReviewerAgent],
         command_executor: CommandExecutor | None = None,
         stream_manager: ReviewStreamManager | None = None,
-        discovery: EntryPointDiscovery | None = None,
-        context_builder: ContextBuilder | None = None,
         merge_policy: MergePolicy | None = None,
-        use_agent_runtime: bool = False,
-        agent_runtime: AgentRuntime | None = None,
     ) -> None:
         self.subagents = subagents
         self.command_executor = command_executor or CommandExecutor()
         self.stream_manager = stream_manager or ReviewStreamManager()
-        # Entry point discovery module for intelligent context filtering
-        self.discovery = discovery or EntryPointDiscovery()
-        self.context_builder = context_builder or DefaultContextBuilder(self.discovery)
         self.merge_policy = merge_policy or PriorityMergePolicy()
-        # Feature flag for using AgentRuntime execution path
-        self.use_agent_runtime = use_agent_runtime
-        # AgentRuntime dependencies (optional, only used when use_agent_runtime=True)
-        self.agent_runtime = agent_runtime
-        self.session_manager = session_manager
-        self.agent_registry = agent_registry
 
     async def run_review(
         self, inputs: ReviewInputs, stream_callback: Callable | None = None

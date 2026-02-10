@@ -63,3 +63,11 @@
 | 2026-02-10 | self | Multiple Python script attempts for line removal | Use head/tail to rebuild file or use sed for precise line operations instead of complex Python scripts |
 | 2026-02-10 | self | Incomplete verification claimed task complete | Run final grep verification before marking task complete |
 | 2026-02-10 | self | Using `echo ""` pattern created grep confusion | Always use explicit grep commands with subshell $(...) to avoid empty line issues |
+
+| 2026-02-10 | self | Removed dual execution paths from PRReviewOrchestrator | Removed use_agent_runtime, agent_runtime, session_manager, agent_registry parameters; removed unused imports (AgentRuntime, SessionManagerLike, AgentRegistry); removed prefers_direct_review() method from BaseReviewerAgent, security.py, and security_fsm.py | Standardize on single AgentRuntime execution path only |
+
+## Patterns That Work
+- Verification pattern: Use grep with exit code checking to verify removal - `grep -n "pattern" file || echo "PASS: Not found (exit code $?)"` - This is cleaner than checking file existence or complex conditions
+
+| 2026-02-10 | self | Removed ContextBuilder abstraction layer | ContextBuilder (331 lines) was deleted. The orchestrator stored context_builder but never actually used it after Wave 2 refactoring removed run_subagents_parallel method. The abstraction didn't add value - direct ReviewContext construction is simpler. |
+
