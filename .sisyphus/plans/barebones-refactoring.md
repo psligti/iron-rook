@@ -1585,7 +1585,7 @@ Parallel Speedup: ~45% faster than sequential
 
 ---
 
-- [ ] 14. Update CLI to Use Dawn-Kestrel Session
+- [x] 14. Update CLI to Use Dawn-Kestrel Session
 
   **What to do**:
   - Import dawn-kestrel SessionManager in CLI
@@ -1684,7 +1684,7 @@ Parallel Speedup: ~45% faster than sequential
 
 ---
 
-- [ ] 15. Test All 11 Reviewers with Dawn-Kestrel
+- [x] 15. Test All 11 Reviewers with Dawn-Kestrel
 
   **What to do**:
   - Run each reviewer individually with dawn-kestrel Session
