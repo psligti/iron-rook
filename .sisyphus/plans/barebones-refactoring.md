@@ -1009,7 +1009,7 @@ Parallel Speedup: ~45% faster than sequential
 
 ---
 
-- [ ] 8. Remove Dual Execution Paths
+- [x] 8. Remove Dual Execution Paths
 
   **What to do**:
   - Remove `use_agent_runtime` parameter from PRReviewOrchestrator.__init__
@@ -1114,7 +1114,7 @@ Parallel Speedup: ~45% faster than sequential
 
 ---
 
-- [ ] 9. Inline ContextBuilder into CLI
+- [x] 9. Inline ContextBuilder into CLI
 
   **What to do**:
   - Read ContextBuilder and DefaultContextBuilder to understand implementation

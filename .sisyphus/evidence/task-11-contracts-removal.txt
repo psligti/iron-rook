@@ -1,0 +1,32 @@
+TASK 11: Remove Security FSM Contracts
+
+FSM Contracts Removed:
+- PhaseOutput (lines 741-772 in original file)
+- SecurityTodo (lines 425-465 in original file)
+- SubagentResult (lines 567-612 in original file)
+- PullRequestChangeList (lines 372-384 in original file)
+- SecurityReviewReport (lines 688-738 in original file)
+- FSMState (lines 631-652 in original file)
+
+Related Contracts Removed (FSM-only dependencies):
+- PullRequestMetadata
+- PRChange
+- PRMetadata
+- PRConstraints
+- SecurityTodoScope
+- SecurityTodoDelegation
+- SubagentRequest
+- EvidenceRef
+- SecurityFinding
+- SubagentFSMState
+- TodoStatus
+- RiskAssessment
+- Action
+
+Original file length: 772 lines
+New file length: 302 lines
+Lines removed: 470 lines (61%)
+
+Verification Results:
+- No FSM contracts remain in contracts.py
+- No imports of FSM contracts found in codebase

@@ -337,3 +337,111 @@ Orchestrator.py is now fully functional with:
 - SecurityReviewer agent has import error (separate issue)
 - Task 10 will remove custom security FSM orchestrator
 - Task 13 will further simplify orchestrator if needed
+
+## Task 12: Remove FSMSecurityOrchestrator
+
+### Status: Already Complete
+
+### What was verified:
+1. **File existence**: `iron_rook/review/FSMSecurityOrchestrator.py` does not exist
+2. **No imports**: `grep -rn "FSMSecurityOrchestrator" iron_rook/` returned no matches
+3. **No references**: No code references FSMSecurityOrchestrator anywhere in the codebase
+
+### Evidence:
+- Deletion verification: `.sisyphus/evidence/task-12-deletion-output.txt`
+- Grep verification: `.sisyphus/evidence/task-12-grep-verification.txt`
+
+### Key insight:
+- FSMSecurityOrchestrator was likely removed during previous tasks (Task 8 removed dual execution paths and related FSM code)
+- The security_fsm.py file still exists (SecurityFSMReviewer), but FSMSecurityOrchestrator.py was already removed
+- This task serves as a final verification that the removal was complete
+
+### Pattern Notes:
+- Verification pattern: Use grep with exit code checking to confirm removal - when grep finds nothing, it exits with code 1, which we interpret as success
+- Sometimes refactoring tasks overlap - code removed in earlier tasks may have already handled dependencies that later tasks reference
+
+## Task 10: Remove Custom Security Review Orchestrator
+
+### What was done:
+1. Deleted `iron_rook/review/fsm_security_orchestrator.py` file (1058 lines)
+2. Deleted `iron_rook/review/agents/security_fsm.py` agent file (247 lines)
+3. Removed import and registration from `registry.py`:
+   - Removed: `from iron_rook.review.agents.security_fsm import SecurityFSMReviewer`
+   - Removed: `ReviewerRegistry.register("security-fsm", SecurityFSMReviewer, is_core=True)`
+
+### Key findings:
+1. **FSM Security Orchestrator was a complex custom implementation**: 1058 lines implementing a full FSM with 6 active phases (intake, plan_todos, delegate, collect, consolidate, evaluate), 3 terminal states, budget tracking, and error handling
+2. **security_fsm.py was entirely dependent on the orchestrator**: This agent was just a wrapper around SecurityReviewOrchestrator to provide a unified agent interface
+3. **Original security.py remains**: The core security reviewer (SecurityReviewer in security.py) is still available and registered
+4. **No other dependencies**: No other files used either the orchestrator or the FSM agent
+
+### Why removal was safe:
+1. **security_fsm.py was a thin wrapper**: It only instantiated SecurityReviewOrchestrator and called run_review(), then converted the output
+2. **Original security reviewer exists**: security.py provides the core security review functionality without the FSM complexity
+3. **FSM was optional**: The security-fsm agent was registered in the registry but wasn't used by default workflows
+
+### Verification results:
+- SecurityReviewOrchestrator references: NONE
+- security_fsm references: NONE
+- fsm_security imports: NONE
+- All greps confirm complete removal
+
+### Pattern Notes:
+- Pattern: When removing a file that has wrapper clients, delete both the implementation and its wrappers
+- Pattern: Use multiple grep patterns to verify complete removal (class name, module name, file path)
+- Pattern: Registry cleanup is essential - removing imports and registration prevents runtime errors
+
+## Task 11: Remove Security FSM Contracts
+
+### What was done:
+1. Removed all FSM-specific contracts from `iron_rook/review/contracts.py` (470 lines)
+2. Removed related contracts that were only used by FSM contracts
+3. Verified no imports of removed contracts remain in codebase
+
+### FSM Contracts Removed (6 main contracts):
+1. **PhaseOutput** - Output from a single FSM phase
+2. **SecurityTodo** - A structured TODO item for security analysis
+3. **SubagentResult** - Result from a delegated subagent execution
+4. **PullRequestChangeList** - Input contract for PR Security Review Agent
+5. **SecurityReviewReport** - Final consolidated security review report
+6. **FSMState** - FSM state tracking for the Security Agent
+
+### Related Contracts Removed (14 FSM-only dependencies):
+- PullRequestMetadata
+- PRChange
+- PRMetadata
+- PRConstraints
+- SecurityTodoScope
+- SecurityTodoDelegation
+- SubagentRequest
+- EvidenceRef
+- SecurityFinding
+- SubagentFSMState
+- TodoStatus
+- RiskAssessment
+- Action
+
+### Key findings:
+1. **No imports found**: Grep search confirmed no code in the entire codebase imports these FSM contracts
+2. **Safe removal**: Since Task 10 removed the FSM security orchestrator and security_fsm.py agent, these contracts were orphaned and safe to delete
+3. **Large reduction**: contracts.py reduced from 772 lines to 302 lines (61% reduction, 470 lines removed)
+4. **Core contracts preserved**: All core review contracts (MergePolicy, ReviewOutput, Scope, Finding, etc.) remain intact
+
+### Why removal was necessary:
+- FSM contracts were specific to the FSM-based security review orchestrator removed in Task 10
+- Keeping orphaned contracts adds unnecessary complexity to the codebase
+- dawn-kestrel SDK provides its own contract mechanisms, making custom FSM contracts redundant
+
+### Verification results:
+- FSM contracts in contracts.py: NONE
+- FSM contract imports in codebase: NONE
+- Related contract usage: NONE (only used within FSM contracts themselves)
+
+### Evidence files:
+- `.sisyphus/evidence/task-11-contracts-removal.txt` - Removal details
+- `.sisyphus/evidence/task-11-grep-verification.txt` - Grep verification output
+
+### Pattern Notes:
+- Pattern: When removing a complex feature, also remove all related contracts that become orphaned
+- Pattern: Use comprehensive grep searches to verify complete removal (contract names, import patterns, related classes)
+- Pattern: Large contract removals significantly simplify codebase when contracts were feature-specific

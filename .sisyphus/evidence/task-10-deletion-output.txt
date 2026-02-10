@@ -1,0 +1,17 @@
+Task 10: Remove Custom Security Review Orchestrator
+====================================================
+
+DELETED FILES:
+1. iron_rook/review/fsm_security_orchestrator.py (1058 lines)
+2. iron_rook/review/agents/security_fsm.py (247 lines)
+
+MODIFIED FILES:
+1. iron_rook/review/registry.py
+   - Removed: from iron_rook.review.agents.security_fsm import SecurityFSMReviewer (line 269)
+   - Removed: ReviewerRegistry.register("security-fsm", SecurityFSMReviewer, is_core=True) (line 275)
+
+VERIFICATION:
+- fsm_security_orchestrator.py: DELETED
+- security_fsm.py: DELETED
+- SecurityReviewOrchestrator references: NONE
+- security_fsm references: NONE

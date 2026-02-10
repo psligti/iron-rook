@@ -76,4 +76,7 @@
 
 
 | 2026-02-10 | self | Orchestrator fully restored from zombie state | Fixed try/except indentation issues, removed all broken references (discovery, context_builder, stream_manager), implemented all missing methods with inline ReviewContext building. 309 lines (55% smaller than original 683 lines). |
+| 2026-02-10 | self | Task 12 (Remove FSMSecurityOrchestrator) - Already complete | File doesn't exist and no references remain in codebase. Likely removed during Task 8 (dual execution paths removal). Verification pattern: grep with exit code 1 = success (no matches found). |
 
+| 2026-02-10 | self | Removed Custom Security Review Orchestrator (Task 10) | Deleted fsm_security_orchestrator.py (1058 lines) and security_fsm.py (247 lines wrapper). Also removed import and registration from registry.py. Original security.py reviewer remains available. Verification pattern: use multiple grep patterns (class name, module name, file path) to confirm complete removal |
+| 2026-02-10 | self | Removed FSM Security Contracts (Task 11) | Removed 6 FSM contracts (PhaseOutput, SecurityTodo, SubagentResult, PullRequestChangeList, SecurityReviewReport, FSMState) plus 14 related contracts from contracts.py. contracts.py reduced from 772 to 302 lines (61% reduction, 470 lines removed). Verified no imports exist in codebase. |

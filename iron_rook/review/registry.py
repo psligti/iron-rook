@@ -266,13 +266,9 @@ class ReviewerRegistry:
 def _register_default_reviewers() -> None:
     """Register all default reviewers at module import time."""
     from iron_rook.review.agents.security import SecurityReviewer
-    from iron_rook.review.agents.security_fsm import SecurityFSMReviewer
 
     # Register core security reviewer (deprecated but still available for compatibility)
     ReviewerRegistry.register("security", SecurityReviewer, is_core=True)
-
-    # Register new FSM-based security reviewer agent
-    ReviewerRegistry.register("security-fsm", SecurityFSMReviewer, is_core=True)
 
     # TEMPORARY: Removing other agents - breaking change
     # They will be re-added later with FSM-style operation

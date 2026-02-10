@@ -1,0 +1,19 @@
+TASK 11: Grep Verification Output
+
+Verification 1: Check for FSM contracts in contracts.py
+Command: grep -n "class PhaseOutput\|class SecurityTodo\|class SubagentResult\|class PullRequestChangeList\|class SecurityReviewReport\|class FSMState" iron_rook/review/contracts.py
+
+Result:
+PASS: No FSM contracts found in contracts.py
+
+Verification 2: Check for FSM contract imports in codebase
+Command: grep -rn "from.*PhaseOutput\|from.*SecurityTodo\|from.*SubagentResult\|from.*PullRequestChangeList\|from.*SecurityReviewReport\|from.*FSMState" iron_rook/ --include="*.py"
+
+Result:
+PASS: No FSM contract imports found
+
+Verification 3: Related contract usage (PullRequestMetadata, PRChange, etc.)
+Command: grep -rn "PullRequestMetadata\|PRChange\|PRMetadata\|PRConstraints\|SecurityTodoScope\|SecurityTodoDelegation\|SubagentRequest\|EvidenceRef\|SecurityFinding\|SubagentFSMState\|TodoStatus\|RiskAssessment\|class Action" iron_rook/review/ --include="*.py" | grep -v "^iron_rook/review/contracts.py:"
+
+Result:
+(No matches - safe to remove)
