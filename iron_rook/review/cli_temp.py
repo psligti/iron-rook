@@ -4,6 +4,9 @@ async def log_verbose_todos(repo_root: str) -> None:
     Args:
         repo_root: Repository root directory
     """
+    from iron_rook.review.logging_utils import ReviewLogger
+    from pathlib import Path
+
     _logger = ReviewLogger.get()
 
     if not _logger.verbose_logging_enabled():

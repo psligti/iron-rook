@@ -73,7 +73,7 @@ def mock_agent_runtime() -> MockAgentRuntime:
 
 
 @pytest.fixture
-def mock_session_manager() -> object:
+def mock_session_manager() -> Any:  # type: ignore[no-any]
     """Fixture providing mocked SessionManager."""
 
     # Make release_session awaitable
@@ -94,7 +94,7 @@ def mock_session_manager() -> object:
 
     manager = MagicMock()
     manager.get_session = mock_get_session
-    return manager
+    return manager  # type: ignore[return-type]
 
 
 @pytest.fixture
@@ -144,7 +144,7 @@ class TestSecurityReviewOrchestrator:
         """Test successful full review run through all phases."""
         orchestrator = SecurityReviewOrchestrator(
             agent_runtime=None,
-            session_manager=mock_session_manager,
+            session_manager=mock_session_manager,  # type: ignore[arg-type]
             prompt_path=None,
         )
 
@@ -548,7 +548,7 @@ class TestPhasePromptLoading:
     """Test _load_phase_prompt() robustness and error handling."""
 
     @pytest.fixture
-    def minimal_prompt_file(self, tmp_path: object) -> str:
+    def minimal_prompt_file(self, tmp_path: Any) -> str:
         """Create a minimal prompt file with known phase sections."""
         prompt_file = tmp_path / "minimal_prompt.md"
         content = """# Test Prompt
@@ -570,7 +570,7 @@ This is plan_todos phase content.
         return str(prompt_file)
 
     @pytest.fixture
-    def missing_phase_prompt_file(self, tmp_path: object) -> str:
+    def missing_phase_prompt_file(self, tmp_path: Any) -> str:
         """Create a prompt file missing the PLAN_TODOS phase."""
         prompt_file = tmp_path / "missing_phase_prompt.md"
         content = """# Test Prompt
@@ -639,8 +639,8 @@ This is delegate phase content.
     ) -> None:
         """Test all 6 phase sections can be loaded from security_review_agent.md."""
         orchestrator = SecurityReviewOrchestrator(
-            agent_runtime=MockAgentRuntime(),
-            session_manager=mock_session_manager,
+            agent_runtime=None,
+            session_manager=mock_session_manager,  # type: ignore
             prompt_path=None,
         )
 

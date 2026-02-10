@@ -7,7 +7,7 @@ name = "iron-rook"
 version = "0.1.0"
 description = "PR Review Agent - Multi-agent code review system using dawn-kestrel SDK"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 keywords = ["code-review", "agents", "ai", "llm", "pr-review"]
 classifiers = [
@@ -20,7 +20,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "dawn-kestrel>=0.1.0",
+    "dawn-kestrel @ file:///Users/parkersligting/develop/pt/worktrees/security-reviewer-smart-agent",
     "click>=8.0",
     "rich>=13.0",
     "pydantic>=2.0",
@@ -43,14 +43,23 @@ where = ["."]
 include = ["iron_rook*"]
 
 [tool.setuptools.package-data]
-"iron_rook.review" = ["py.typed"]
+"iron_rook.review" = ["py.typed", "*.md"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py310"
 
 [tool.mypy]
+disable_error_code = "possibly-missing-attribute"
 python_version = "3.10"
 warn_return_any = true
 warn_unused_ignores = true
 ignore_missing_imports = true
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.408",
+    "pytest>=9.0.2",
+    "ruff>=0.15.0",
+    "ty>=0.0.15",
+]

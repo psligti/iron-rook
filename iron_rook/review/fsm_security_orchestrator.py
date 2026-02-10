@@ -41,6 +41,7 @@ from iron_rook.review.contracts import (
     SubagentResult,
     TodoStatus,
 )
+from typing import Literal, cast
 
 logger = logging.getLogger(__name__)
 
@@ -204,7 +205,9 @@ class SecurityReviewOrchestrator:
         with open(default_prompt, "r") as f:
             self.system_prompt = f.read()
 
-        self.state = FSMState(phase="intake", iterations=0, tool_calls_used=0, subagents_used=0)
+        self.state: FSMState = FSMState(
+            phase="intake", iterations=0, tool_calls_used=0, subagents_used=0
+        )
         self.pr_input: Optional[PullRequestChangeList] = None
         self.todos: List[SecurityTodo] = []
         self.subagent_results: List[SubagentResult] = []
@@ -359,7 +362,7 @@ class SecurityReviewOrchestrator:
             raise FSMPhaseError(error_msg)
 
         # Validate next_phase_request is a valid phase value
-        valid_phases = {
+        valid_phases: List[str] = [
             "intake",
             "plan_todos",
             "delegate",
@@ -370,7 +373,7 @@ class SecurityReviewOrchestrator:
             "stopped_budget",
             "stopped_human",
             "stopped_retry_exhausted",
-        }
+        ]
         if next_phase_request not in valid_phases:
             error_msg = (
                 f"Phase {from_phase} returned unexpected next_phase_request: {next_phase_request!r}. "
@@ -479,8 +482,8 @@ class SecurityReviewOrchestrator:
         Returns:
             User message as JSON string
         """
-        pr_dict = context_data.get("pr")
-        changes_list = context_data.get("changes")
+        pr_dict: Dict[str, Any] = context_data.get("pr", {})
+        changes_list: List[Dict[str, Any]] = context_data.get("changes", [])
 
         if phase == "intake":
             return json.dumps(
@@ -623,7 +626,7 @@ class SecurityReviewOrchestrator:
                         logger.error(
                             f"Phase {phase} failed with transient error after {max_retries + 1} attempts: {classified_error}"
                         )
-                        self.state.phase = "stopped_retry_exhausted"  # type: ignore[assignment]
+                        self.state.phase = "stopped_retry_exhausted"
                         self.state.stop_reason = f"Transient error exhausted retries in phase {phase}: {classified_error}"
                         return None
                 else:
@@ -755,8 +758,9 @@ class SecurityReviewOrchestrator:
         finally:
             # Ensure session is always released to prevent leaks
             try:
-                await self.session_manager.release_session(session_id)
-                logger.debug(f"Released session: {session_id} for phase {phase}")
+                if hasattr(self.session_manager, "release_session"):
+                    await self.session_manager.release_session(session_id)
+                    logger.debug(f"Released session: {session_id} for phase {phase}")
             except Exception as e:
                 logger.warning(f"Failed to release session {session_id}: {e}")
 
@@ -797,11 +801,11 @@ class SecurityReviewOrchestrator:
                 "low": [],
             },
             risk_assessment=RiskAssessment(
-                overall="low",  # type: ignore[possibly-missing-attribute]
-                rationale=f"Execution stopped before completion: {reason}",  # type: ignore[possibly-missing-attribute]
-            ),  # type: ignore[possibly-missing-attribute]
-            evidence_index=[],  # type: ignore[possibly-missing-attribute]
-            actions={"required": [], "suggested": []},  # type: ignore[possibly-missing-attribute]
+                overall="low",
+                rationale=f"Execution stopped before completion: {reason}",
+            ),
+            evidence_index=[],
+            actions={"required": [], "suggested": []},
             confidence=0.0,
         )
 
@@ -886,12 +890,12 @@ class SecurityReviewOrchestrator:
             todos=todos,
             findings=findings,
             risk_assessment=RiskAssessment(
-                overall=risk_assessment_data.get("overall", "low"),  # type: ignore[possibly-missing-attribute]
-                rationale=risk_assessment_data.get("rationale", ""),  # type: ignore[possibly-missing-attribute]
-                areas_touched=risk_assessment_data.get("areas_touched", []),  # type: ignore[possibly-missing-attribute]
-            ),  # type: ignore[possibly-missing-attribute]
-            evidence_index=evidence_index,  # type: ignore[possibly-missing-attribute]
-            actions=actions,  # type: ignore[possibly-missing-attribute]
+                overall=risk_assessment_data.get("overall", "low"),
+                rationale=risk_assessment_data.get("rationale", ""),
+                areas_touched=risk_assessment_data.get("areas_touched", []),
+            ),
+            evidence_index=evidence_index,
+            actions=actions,
             confidence=confidence,
             missing_information=missing_information,
         )

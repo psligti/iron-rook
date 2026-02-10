@@ -1,7 +1,7 @@
 """Context builder interface and default implementation for review agents.
 
 This module provides seam for building ReviewContext objects, allowing
-customization of context construction logic (e.g., filtering, discovery,
+customization of context construction logic (e.g., filtering,
 fallback behavior) while maintaining a consistent interface for the orchestrator.
 """
 
@@ -22,7 +22,6 @@ from iron_rook.review.contracts import (
     PRMetadata,
     PRConstraints,
 )
-from iron_rook.review.discovery import EntryPointDiscovery
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +30,7 @@ class ContextBuilder(ABC):
     """Abstract interface for building ReviewContext for review agents.
 
     Implementations can customize how ReviewContext is constructed, including:
-    - Entry point discovery and filtering
-    - Fallback behavior when discovery fails
+    - File filtering based on agent relevance
     - Context enrichment strategies
 
     The default implementation (DefaultContextBuilder) mirrors the original
@@ -60,23 +58,16 @@ class ContextBuilder(ABC):
 class DefaultContextBuilder(ContextBuilder):
     """Default context builder implementation mirroring orchestrator behavior.
 
-    This implementation preserves the original orchestrator context building logic:
-    1. Discovers entry points relevant to the agent's patterns
-    2. Filters changed_files to only those containing discovered entry points
-    3. Falls back to is_relevant_to_changes() if discovery fails
-
+    This implementation uses the agent's is_relevant_to_changes() method for filtering.
     This ensures backward compatibility with existing behavior while providing
     an injectable seam for customization.
     """
 
-    def __init__(self, discovery: EntryPointDiscovery | None = None) -> None:
+    def __init__(self) -> None:
         """Initialize default context builder.
 
         Args:
-            discovery: EntryPointDiscovery instance for context filtering.
-                        Defaults to None (creates new instance if needed).
         """
-        self.discovery = discovery or EntryPointDiscovery()
 
     async def build(
         self,
@@ -85,10 +76,7 @@ class DefaultContextBuilder(ContextBuilder):
     ) -> ReviewContext:
         """Build ReviewContext for a specific agent.
 
-        This method performs intelligent context filtering using entry point discovery:
-        1. Discovers entry points relevant to the agent's patterns
-        2. Filters changed_files to only those containing discovered entry points
-        3. Falls back to is_relevant_to_changes() if discovery fails
+        This method uses the agent's is_relevant_to_changes() method for filtering.
 
         Args:
             inputs: ReviewInputs with review parameters
@@ -105,30 +93,12 @@ class DefaultContextBuilder(ContextBuilder):
             inputs.repo_root, inputs.base_ref, inputs.head_ref
         )
 
-        entry_points = await self.discovery.discover_entry_points(
-            agent_name=agent_name,
-            repo_root=inputs.repo_root,
-            changed_files=all_changed_files,
-        )
-
-        if entry_points is not None:
-            ep_file_set = {ep.file_path for ep in entry_points}
-            filtered_files = [f for f in all_changed_files if f in ep_file_set]
-            logger.info(
-                f"[{agent_name}] Entry point discovery found {len(entry_points)} entry points, "
-                f"filtered to {len(filtered_files)}/{len(all_changed_files)} files"
-            )
-            changed_files = filtered_files
+        # Use agent's relevance filtering
+        if agent.is_relevant_to_changes(all_changed_files):
+            changed_files = all_changed_files
         else:
-            logger.info(
-                f"[{agent_name}] Entry point discovery returned None, "
-                f"using is_relevant_to_changes() fallback"
-            )
-            if agent.is_relevant_to_changes(all_changed_files):
-                changed_files = all_changed_files
-            else:
-                changed_files = []
-                logger.info(f"[{agent_name}] Agent not relevant to changes, skipping review")
+            changed_files = []
+            logger.info(f"[{agent_name}] Agent not relevant to changes, skipping review")
 
         diff = await get_diff(inputs.repo_root, inputs.base_ref, inputs.head_ref)
 

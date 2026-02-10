@@ -1,0 +1,32 @@
+TASK 5: Remove EntryPointDiscovery - Deletion Evidence
+======================================================
+
+Date: 2026-02-10
+
+## Files Modified
+
+1. DELETED: iron_rook/review/discovery.py
+   - Lines removed: 659
+   - Status: File successfully deleted
+
+2. MODIFIED: iron_rook/review/orchestrator.py
+   - Removed import: `from iron_rook.review.discovery import EntryPointDiscovery`
+   - Removed parameter: `discovery: EntryPointDiscovery | None = None`
+   - Removed lines:
+     - Comment: "# Entry point discovery module for intelligent context filtering"
+     - Assignment: `self.discovery = discovery or EntryPointDiscovery()`
+   - Updated line: `self.context_builder = context_builder or DefaultContextBuilder(self.discovery)`
+               → `self.context_builder = context_builder or DefaultContextBuilder()`
+
+3. MODIFIED: iron_rook/review/context_builder.py
+   - Removed import: `from iron_rook.review.discovery import EntryPointDiscovery`
+   - Removed parameter: `def __init__(self, discovery: EntryPointDiscovery | None = None)`
+   - Updated to: `def __init__(self)`
+   - Removed assignment: `self.discovery = discovery or EntryPointDiscovery()`
+   - Simplified build method to use agent's is_relevant_to_changes() directly
+   - Updated docstrings to remove discovery references
+
+## Verification
+
+discovery.py file status: DELETED (not found)
+EntryPointDiscovery references in codebase: NONE (verified)

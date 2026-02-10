@@ -8,8 +8,10 @@ import sys
 from pathlib import Path
 from typing import Literal
 
-import click  # type: ignore[import-not-found]
-from rich.console import Console  # type: ignore[import-not-found]
+import click
+from rich.console import Console
+
+from iron_rook.review.base import BaseReviewerAgent
 
 console = Console()
 
@@ -234,7 +236,7 @@ def setup_logging(verbose: bool = False) -> None:
         logging.getLogger().setLevel(logging.DEBUG)
 
 
-def get_subagents(include_optional: bool = False) -> list[object]:
+def get_subagents(include_optional: bool = False) -> list[BaseReviewerAgent]:
     """Get list of subagents based on optional flag.
 
     Args:
@@ -398,16 +400,6 @@ def review(
                 console.print("[cyan]iron-rook --agent security-fsm[/cyan]")
                 console.print()
                 raise click.ClickException(f"Unknown agent '{agent}'. Available agents: {names}")
-        # Show deprecation warning if user tries to use deprecated 'security' agent
-        if agent == "security":
-            console.print()
-            console.print("[yellow]WARNING: The 'security' agent is deprecated.[/yellow]")
-            console.print(
-                "[yellow]Please use the FSM-based security reviewer instead via:[/yellow]"
-            )
-            console.print("[cyan]iron-rook --agent security-fsm[/cyan]")
-            console.print()
-            raise click.ClickException(f"Unknown agent '{agent}'. Available agents: {names}")
 
         # Register security agent in shared AgentRegistry for AgentRuntime execution
         SECURITY_REVIEWER_AGENT = Agent(

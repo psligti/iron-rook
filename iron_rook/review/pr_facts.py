@@ -144,7 +144,7 @@ class DiffSummary(pd.BaseModel):
     model_config = pd.ConfigDict(extra="forbid")
 
     @pd.model_validator(mode="after")
-    def enforce_hunk_limit_per_file(self) -> "PullRequestHunks":
+    def enforce_hunk_limit_per_file(self):  # Let pydantic infer return type
         """
         Enforce MAX_HUNKS_PER_FILE per file.
 
@@ -192,7 +192,7 @@ class CandidateFiles(pd.BaseModel):
     model_config = pd.ConfigDict(extra="forbid")
 
     @pd.model_validator(mode="after")
-    def enforce_file_count_limit(self) -> "PullRequestHunks":
+    def enforce_file_count_limit(self) -> "CandidateFiles":
         """
         Enforce MAX_CANDIDATE_FILES.
 
