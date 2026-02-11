@@ -12,6 +12,8 @@ from typing import Literal
 from rich.console import Console
 from rich.text import Text
 
+from iron_rook.review.contracts import ThinkingFrame, ThinkingStep
+
 
 class SecurityPhaseLogger:
     """Logger for security review phase-specific output with colored formatting.
@@ -98,6 +100,88 @@ class SecurityPhaseLogger:
             self._logger.info("[TRANSITION] %s → %s", from_state, to_state)
         else:
             self._logger.info("[TRANSITION] %s → %s", from_state, to_state)
+
+    def log_thinking_frame(self, frame: ThinkingFrame) -> None:
+        """Log a thinking frame with structured, styled output.
+
+        Args:
+            frame: ThinkingFrame containing state, goals, checks, risks, steps, and decision.
+
+        Example:
+            >>> from iron_rook.review.contracts import ThinkingFrame, ThinkingStep
+            >>> logger = SecurityPhaseLogger()
+            >>> step = ThinkingStep(kind="transition", why="test", confidence="high")
+            >>> frame = ThinkingFrame(state="test", steps=[step], decision="done")
+            >>> logger.log_thinking_frame(frame)
+        """
+        if self._enable_color:
+            phase_key = frame.state.upper()
+            color = self.PHASE_COLORS.get(phase_key, "white")
+
+            state_header = Text(f"== {frame.state.upper()} ==", style=f"bold {color}")
+            self._console.print(state_header)
+
+            if frame.goals:
+                goals_label = Text("Goals:", style="bold")
+                self._console.print(goals_label)
+                for goal in frame.goals:
+                    goal_text = Text(f"  • {goal}", style="dim")
+                    self._console.print(goal_text)
+
+            if frame.checks:
+                checks_label = Text("Checks:", style="bold")
+                self._console.print(checks_label)
+                for check in frame.checks:
+                    check_text = Text(f"  • {check}", style="dim")
+                    self._console.print(check_text)
+
+            if frame.risks:
+                risks_label = Text("Risks:", style="bold")
+                self._console.print(risks_label)
+                for risk in frame.risks:
+                    risk_text = Text(f"  • {risk}", style="red")
+                    self._console.print(risk_text)
+
+            for i, step in enumerate(frame.steps, 1):
+                step_header = Text(f"Step {i} ({step.kind}):", style="bold")
+                self._console.print(step_header)
+
+                why_text = Text(f"  Why: {step.why}", style="dim")
+                self._console.print(why_text)
+
+                if step.evidence:
+                    evidence_text = Text(f"  Evidence: {', '.join(step.evidence)}", style="dim")
+                    self._console.print(evidence_text)
+
+                if step.next:
+                    next_text = Text(f"  Next: {step.next}", style="dim")
+                    self._console.print(next_text)
+
+                confidence_text = Text(f"  Confidence: {step.confidence}", style="dim")
+                self._console.print(confidence_text)
+
+            decision_text = Text(f"Decision: {frame.decision}", style="bold")
+            self._console.print(decision_text)
+
+            self._logger.debug(
+                "[%s] ThinkingFrame: goals=%d, checks=%d, risks=%d, steps=%d, decision=%s",
+                frame.state,
+                len(frame.goals),
+                len(frame.checks),
+                len(frame.risks),
+                len(frame.steps),
+                frame.decision,
+            )
+        else:
+            self._logger.info(
+                "[%s] ThinkingFrame: goals=%d, checks=%d, risks=%d, steps=%d, decision=%s",
+                frame.state,
+                len(frame.goals),
+                len(frame.checks),
+                len(frame.risks),
+                len(frame.steps),
+                frame.decision,
+            )
 
     def get_phase_color(self, phase: str) -> str:
         """Get the color style for a given phase.
