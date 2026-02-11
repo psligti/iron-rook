@@ -518,13 +518,56 @@ class SecurityReviewer(BaseReviewerAgent):
         if thinking:
             self._phase_logger.log_thinking("CONSOLIDATE", thinking)
 
+        # Parse JSON response
+        output = self._parse_phase_response(response_text, "consolidate")
+
+        goals = [
+            "Merge all subagent findings into structured evidence list",
+            "De-duplicate findings by severity and finding_id",
+            "Synthesize summary of issues found",
+        ]
+        checks = [
+            "Verify all findings have required fields and valid structure",
+            "Ensure de-duplication correctly identifies duplicate findings",
+            "Validate summary accurately reflects consolidated findings",
+        ]
+        risks = [
+            "Inaccurate merging of conflicting findings",
+            "Missing findings due to aggressive de-duplication",
+            "Incomplete summary of security issues",
+        ]
+
+        steps = []
+        if thinking:
+            steps.append(
+                ThinkingStep(
+                    kind="gate",
+                    why=thinking,
+                    evidence=["LLM response analysis"],
+                    next=output.get("next_phase_request", "evaluate"),
+                    confidence="medium",
+                )
+            )
+
+        decision = output.get("next_phase_request", "evaluate")
+
+        frame = ThinkingFrame(
+            state="consolidate",
+            goals=goals,
+            checks=checks,
+            risks=risks,
+            steps=steps,
+            decision=decision,
+        )
+
+        self._phase_logger.log_thinking_frame(frame)
+        self._thinking_log.add(frame)
+
         # Log thinking output
         self._phase_logger.log_thinking(
             "CONSOLIDATE", "CONSOLIDATE complete, findings merged and de-duplicated"
         )
 
-        # Parse JSON response
-        output = self._parse_phase_response(response_text, "consolidate")
         return output
 
     async def _run_evaluate(self, context: ReviewContext) -> Dict[str, Any]:
