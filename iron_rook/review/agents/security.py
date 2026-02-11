@@ -602,6 +602,60 @@ class SecurityReviewer(BaseReviewerAgent):
 
         # Parse JSON response
         output = self._parse_phase_response(response_text, "evaluate")
+
+        # Create ThinkingFrame with extracted data
+        goals = [
+            "Assess findings severity (critical/high/medium/low)",
+            "Generate comprehensive risk assessment",
+            "Provide clear recommendations for each finding",
+            "Determine overall risk level (critical/high/medium/low)",
+            "Specify required and suggested actions",
+        ]
+        checks = [
+            "Verify findings are properly categorized by severity",
+            "Ensure evidence is provided for each finding",
+            "Check recommendations are actionable and specific",
+            "Validate risk assessment is consistent with findings",
+        ]
+        risks = [
+            "Underestimating critical vulnerabilities",
+            "Missing high-impact security issues",
+            "Providing ambiguous or impractical recommendations",
+            "Inconsistent severity classification",
+        ]
+
+        # Create ThinkingStep from extracted thinking
+        steps = []
+        if thinking:
+            steps.append(
+                ThinkingStep(
+                    kind="transition",
+                    why=thinking,
+                    evidence=["LLM response analysis"],
+                    next="done",
+                    confidence="medium",
+                )
+            )
+
+        # Get decision from output (EVALUATE is final phase)
+        decision = output.get("next_phase_request", "done")
+
+        # Create ThinkingFrame
+        frame = ThinkingFrame(
+            state="evaluate",
+            goals=goals,
+            checks=checks,
+            risks=risks,
+            steps=steps,
+            decision=decision,
+        )
+
+        # Log ThinkingFrame using phase logger
+        self._phase_logger.log_thinking_frame(frame)
+
+        # Add ThinkingFrame to thinking log
+        self._thinking_log.add(frame)
+
         return output
 
     def _get_phase_prompt(self, phase: str) -> str:
