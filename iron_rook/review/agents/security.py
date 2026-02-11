@@ -16,6 +16,8 @@ from iron_rook.review.contracts import (
     MergeGate,
     Finding,
     RunLog,
+    ThinkingFrame,
+    ThinkingStep,
     get_review_output_schema,
     get_phase_output_schema,
 )
@@ -218,6 +220,36 @@ class SecurityReviewer(BaseReviewerAgent):
 
         # Parse JSON response
         output = self._parse_phase_response(response_text, "intake")
+
+        data = output.get("data", {})
+        goals = data.get("goals", [])
+        checks = data.get("checks", [])
+        risks = data.get("risks", [])
+
+        steps: List[ThinkingStep] = []
+        if thinking:
+            steps.append(
+                ThinkingStep(
+                    kind="transition",
+                    why=thinking,
+                    evidence=[],
+                    next="plan_todos",
+                    confidence="medium",
+                )
+            )
+
+        frame = ThinkingFrame(
+            state="intake",
+            goals=goals if goals else ["Analyze PR changes for security surfaces"],
+            checks=checks if checks else ["Identify security-sensitive code areas"],
+            risks=risks if risks else data.get("risk_hypotheses", []),
+            steps=steps,
+            decision=output.get("next_phase_request", "plan_todos"),
+        )
+
+        self._phase_logger.log_thinking_frame(frame)
+        self._thinking_log.add(frame)
+
         return output
 
     async def _run_plan_todos(self, context: ReviewContext) -> Dict[str, Any]:
@@ -247,14 +279,64 @@ class SecurityReviewer(BaseReviewerAgent):
         if thinking:
             self._phase_logger.log_thinking("PLAN_TODOS", thinking)
 
+        # Parse JSON response
+        output = self._parse_phase_response(response_text, "plan_todos")
+
+        # Create ThinkingFrame with extracted data
+        goals = [
+            "Create structured security TODOs with priorities",
+            "Map TODOs to appropriate subagents or self",
+            "Specify tool choices for each TODO",
+        ]
+        checks = [
+            "Verify TODOs cover all risk hypotheses from INTAKE",
+            "Ensure each TODO has clear acceptance criteria",
+            "Check subagent assignments are appropriate",
+        ]
+        risks = [
+            "Incomplete coverage of security risks",
+            "Inappropriate subagent delegation",
+            "Missing evidence requirements",
+        ]
+
+        # Create ThinkingStep from extracted thinking
+        steps = []
+        if thinking:
+            steps.append(
+                ThinkingStep(
+                    kind="transition",
+                    why=thinking,
+                    evidence=["LLM response analysis"],
+                    next="delegate",
+                    confidence="medium",
+                )
+            )
+
+        # Get decision from output
+        decision = output.get("next_phase_request", "delegate")
+
+        # Create ThinkingFrame
+        frame = ThinkingFrame(
+            state="plan_todos",
+            goals=goals,
+            checks=checks,
+            risks=risks,
+            steps=steps,
+            decision=decision,
+        )
+
+        # Log ThinkingFrame using phase logger
+        self._phase_logger.log_thinking_frame(frame)
+
+        # Add ThinkingFrame to thinking log accumulator
+        self._thinking_log.add(frame)
+
         # Log thinking output
         self._phase_logger.log_thinking(
             "PLAN_TODOS",
             f"PLAN_TODOS complete, {len(self._phase_outputs.get('intake', {}).get('data', {}).get('risk_hypotheses', []))} TODOs planned",
         )
 
-        # Parse JSON response
-        output = self._parse_phase_response(response_text, "plan_todos")
         return output
 
     async def _run_delegate(self, context: ReviewContext) -> Dict[str, Any]:
@@ -284,11 +366,61 @@ class SecurityReviewer(BaseReviewerAgent):
         if thinking:
             self._phase_logger.log_thinking("DELEGATE", thinking)
 
+        # Parse JSON response
+        output = self._parse_phase_response(response_text, "delegate")
+
+        # Create ThinkingFrame with extracted data
+        goals = [
+            "Generate subagent requests for delegated TODOs",
+            "Create local analysis plans for self-assigned TODOs",
+            "Validate delegation strategy aligns with TODO priorities",
+        ]
+        checks = [
+            "Verify all delegated TODOs have appropriate subagent requests",
+            "Ensure self-assigned TODOs have clear analysis plans",
+            "Validate subagent types match TODO risk categories",
+        ]
+        risks = [
+            "Incomplete delegation leading to missing security checks",
+            "Inappropriate subagent assignments",
+            "Self-analysis may miss complex security patterns",
+        ]
+
+        # Create ThinkingStep from extracted thinking
+        steps = []
+        if thinking:
+            steps.append(
+                ThinkingStep(
+                    kind="delegate",
+                    why=thinking,
+                    evidence=["LLM response analysis"],
+                    next=output.get("next_phase_request", "collect"),
+                    confidence="medium",
+                )
+            )
+
+        # Get decision from output
+        decision = output.get("next_phase_request", "collect")
+
+        # Create ThinkingFrame
+        frame = ThinkingFrame(
+            state="delegate",
+            goals=goals,
+            checks=checks,
+            risks=risks,
+            steps=steps,
+            decision=decision,
+        )
+
+        # Log ThinkingFrame using phase logger
+        self._phase_logger.log_thinking_frame(frame)
+
+        # Add ThinkingFrame to thinking log accumulator
+        self._thinking_log.add(frame)
+
         # Log thinking output
         self._phase_logger.log_thinking("DELEGATE", "DELEGATE complete, subagents dispatched")
 
-        # Parse JSON response
-        output = self._parse_phase_response(response_text, "delegate")
         return output
 
     async def _run_collect(self, context: ReviewContext) -> Dict[str, Any]:
