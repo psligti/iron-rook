@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import List, Literal, Dict, Optional
 import pydantic as pd
 
@@ -102,6 +103,54 @@ class Check(pd.BaseModel):
     model_config = pd.ConfigDict(extra="ignore")
 
 
+class ThinkingStep(pd.BaseModel):
+    kind: Literal["transition", "tool", "delegate", "gate", "stop"]
+    why: str
+    evidence: List[str] = pd.Field(default_factory=list)
+    next: Optional[str] = None
+    confidence: Literal["low", "medium", "high"] = "medium"
+
+    model_config = pd.ConfigDict(extra="ignore")
+
+
+class ThinkingFrame(pd.BaseModel):
+    state: str
+    ts: str = pd.Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    goals: List[str] = pd.Field(default_factory=list)
+    checks: List[str] = pd.Field(default_factory=list)
+    risks: List[str] = pd.Field(default_factory=list)
+    steps: List[ThinkingStep] = pd.Field(default_factory=list)
+    decision: str
+
+    model_config = pd.ConfigDict(extra="ignore")
+
+
+class RunLog(pd.BaseModel):
+    """Accumulator for thinking frames during FSM execution.
+
+    Internal accumulator that collects ThinkingFrame objects to track
+    the agent's reasoning process through FSM phases.
+
+    Methods:
+        add: Append a ThinkingFrame to the frames list
+    """
+
+    frames: List[ThinkingFrame] = pd.Field(
+        default_factory=list,
+        description="List of thinking frames collected during FSM execution",
+    )
+
+    def add(self, frame: ThinkingFrame) -> None:
+        """Append a thinking frame to the frames list.
+
+        Args:
+            frame: ThinkingFrame to add to the log
+        """
+        self.frames.append(frame)
+
+    model_config = pd.ConfigDict(extra="ignore")
+
+
 class Skip(pd.BaseModel):
     name: str
     why_safe: str
@@ -181,6 +230,205 @@ class OrchestratorOutput(pd.BaseModel):
     total_findings: int = 0
 
     model_config = pd.ConfigDict(extra="ignore")
+
+
+# ============================================================================
+# Security FSM Phase Output Models
+# ============================================================================
+
+
+class IntakePhaseOutput(pd.BaseModel):
+    """Output model for INTAKE phase."""
+
+    phase: Literal["intake"]
+    data: "IntakePhaseData"
+    next_phase_request: Literal["plan_todos"]
+
+
+class IntakePhaseData(pd.BaseModel):
+    """Data model for INTAKE phase."""
+
+    summary: str
+    risk_hypotheses: List[str] = pd.Field(default_factory=list)
+    questions: List[str] = pd.Field(default_factory=list)
+
+
+class PlanTodosPhaseOutput(pd.BaseModel):
+    """Output model for PLAN_TODOS phase."""
+
+    phase: Literal["plan_todos"]
+    data: "PlanTodosPhaseData"
+    next_phase_request: Literal["delegate"]
+
+
+class SecurityTodo(pd.BaseModel):
+    """Security TODO item model."""
+
+    id: str
+    description: str
+    priority: Literal["high", "medium", "low"]
+    risk_category: str
+    acceptance_criteria: str
+    evidence_required: List[str] = pd.Field(default_factory=list)
+
+
+class PlanTodosPhaseData(pd.BaseModel):
+    """Data model for PLAN_TODOS phase."""
+
+    todos: List[SecurityTodo] = pd.Field(default_factory=list)
+    delegation_plan: Dict[str, str] = pd.Field(default_factory=dict)
+    tools_considered: List[str] = pd.Field(default_factory=list)
+    tools_chosen: List[str] = pd.Field(default_factory=list)
+    why: str
+
+
+class SubagentRequest(pd.BaseModel):
+    """Subagent request model."""
+
+    todo_id: str
+    agent_type: str
+    scope: List[str] = pd.Field(default_factory=list)
+    instructions: str
+
+
+class DelegatePhaseOutput(pd.BaseModel):
+    """Output model for DELEGATE phase."""
+
+    phase: Literal["delegate"]
+    data: "DelegatePhaseData"
+    next_phase_request: Literal["collect", "consolidate", "evaluate", "done"]
+
+
+class DelegatePhaseData(pd.BaseModel):
+    """Data model for DELEGATE phase."""
+
+    subagent_requests: List[SubagentRequest] = pd.Field(default_factory=list)
+    self_analysis_plan: List[str] = pd.Field(default_factory=list)
+
+
+class CollectPhaseOutput(pd.BaseModel):
+    """Output model for COLLECT phase."""
+
+    phase: Literal["collect"]
+    data: "CollectPhaseData"
+    next_phase_request: Literal["consolidate"]
+
+
+class TodoStatus(pd.BaseModel):
+    """TODO status model."""
+
+    todo_id: str
+    status: Literal["done", "blocked", "deferred"]
+    explanation: str
+
+
+class CollectPhaseData(pd.BaseModel):
+    """Data model for COLLECT phase."""
+
+    todo_status: List[TodoStatus] = pd.Field(default_factory=list)
+    issues_with_results: List[str] = pd.Field(default_factory=list)
+
+
+class ConsolidatePhaseOutput(pd.BaseModel):
+    """Output model for CONSOLIDATE phase."""
+
+    phase: Literal["consolidate"]
+    data: "ConsolidatePhaseData"
+    next_phase_request: Literal["evaluate"]
+
+
+class ConsolidateGates(pd.BaseModel):
+    """Consolidation gates model."""
+
+    all_todos_resolved: bool
+    evidence_present: bool
+    findings_categorized: bool
+    confidence_set: bool
+
+
+class ConsolidatePhaseData(pd.BaseModel):
+    """Data model for CONSOLIDATE phase."""
+
+    gates: ConsolidateGates
+    missing_information: List[str] = pd.Field(default_factory=list)
+
+
+class EvaluatePhaseOutput(pd.BaseModel):
+    """Output model for EVALUATE phase."""
+
+    phase: Literal["evaluate"]
+    data: "EvaluatePhaseData"
+    next_phase_request: Literal["done"]
+
+
+class EvaluateFinding(pd.BaseModel):
+    """Finding in evaluation phase."""
+
+    severity: Literal["critical", "high", "medium", "low"]
+    title: str
+    description: str
+    evidence: List[dict] = pd.Field(default_factory=list)
+    recommendations: List[str] = pd.Field(default_factory=list)
+
+
+class RiskAssessment(pd.BaseModel):
+    """Risk assessment model."""
+
+    overall: Literal["critical", "high", "medium", "low"]
+    rationale: str
+    areas_touched: List[str] = pd.Field(default_factory=list)
+
+
+class EvaluatePhaseData(pd.BaseModel):
+    """Data model for EVALUATE phase."""
+
+    findings: Dict[str, List[EvaluateFinding]] = pd.Field(default_factory=dict)
+    risk_assessment: RiskAssessment
+    evidence_index: List[dict] = pd.Field(default_factory=list)
+    actions: Dict[str, List[str]] = pd.Field(default_factory=dict)
+    confidence: float = pd.Field(ge=0.0, le=1.0)
+    missing_information: List[str] = pd.Field(default_factory=list)
+
+
+def get_phase_output_schema(phase: str) -> str:
+    """Return JSON schema for the specified phase output as a string for inclusion in prompts.
+
+    Args:
+        phase: Phase name (e.g., "intake", "plan_todos", "delegate", "collect", "consolidate", "evaluate")
+
+    Returns:
+        JSON schema string with explicit type information
+
+    Raises:
+        ValueError: If phase name is not recognized
+    """
+    phase_schemas = {
+        "intake": IntakePhaseOutput,
+        "plan_todos": PlanTodosPhaseOutput,
+        "delegate": DelegatePhaseOutput,
+        "collect": CollectPhaseOutput,
+        "consolidate": ConsolidatePhaseOutput,
+        "evaluate": EvaluatePhaseOutput,
+    }
+
+    if phase not in phase_schemas:
+        raise ValueError(f"Unknown phase: {phase}. Valid phases: {list(phase_schemas.keys())}")
+
+    model = phase_schemas[phase]
+    return f"""You MUST output valid JSON matching this exact schema. The output is parsed directly by a Pydantic model with no post-processing:
+
+{model.model_json_schema()}
+
+CRITICAL RULES:
+- Include ALL required fields
+- NEVER include extra fields not in this schema (will cause validation errors)
+- Empty arrays are allowed: [], null values are allowed only where specified
+- Return ONLY a JSON object, no other text, no markdown code blocks
+- Output must be valid JSON that passes Pydantic validation as-is
+
+EXAMPLE VALID OUTPUT:
+{model.model_json_schema()}
+"""
 
 
 def get_review_output_schema() -> str:

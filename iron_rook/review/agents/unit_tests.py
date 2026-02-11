@@ -1,7 +1,10 @@
 """Unit Tests Reviewer agent for checking test quality and adequacy."""
+
 from __future__ import annotations
 from typing import List
 import logging
+
+from iron_rook.fsm.state import AgentState
 
 from iron_rook.review.base import BaseReviewerAgent, ReviewContext
 from iron_rook.review.contracts import (
@@ -21,6 +24,15 @@ class UnitTestsReviewer(BaseReviewerAgent):
     - Edge case coverage (boundary values, error conditions)
     - Determinism (randomness, time dependencies, state leakage)
     """
+
+    FSM_TRANSITIONS: dict[AgentState, set[AgentState]] = {
+        AgentState.IDLE: {AgentState.INITIALIZING},
+        AgentState.INITIALIZING: {AgentState.READY, AgentState.FAILED},
+        AgentState.READY: {AgentState.RUNNING, AgentState.FAILED},
+        AgentState.RUNNING: {AgentState.COMPLETED, AgentState.FAILED},
+        AgentState.COMPLETED: set(),
+        AgentState.FAILED: set(),
+    }
 
     def get_system_prompt(self) -> str:
         """Return the system prompt for this reviewer agent."""

@@ -1,6 +1,23 @@
 {
-  "active_plan": "/Users/parkersligting/develop/pt/iron-rook/.sisyphus/plans/barebones-refactoring.md",
-  "started_at": "2026-02-10T19:24:35.554Z",
-  "session_ids": ["ses_3b6fcc0a0ffemiGQobFueI1Axo"],
-  "plan_name": "barebones-refactoring"
+  "active_plan": "/Users/parkersligting/develop/pt/iron-rook/.sisyphus/plans/security-agent-fsm-implementation.md",
+  "started_at": "2026-02-11T16:41:08.484Z",
+  "session_ids": [
+    "ses_3b2d16eb4fel212Pr4FYxvHjW",
+    "ses_3b24b7328ffeCG44jS7BV41u87"
+  ],
+  "plan_name": "security-agent-fsm-implementation",
+  "tasks": [
+    {
+      "id": "1",
+      "content": "Update CLI with RichHandler for colored logging",
+      "status": "pending",
+      "priority": "medium"
+    },
+    {
+      "id": "2",
+      "content": "Update CLI with RichHandler for colored logging",
+      "status": "completed",
+      "priority": "medium"
+    }
+  ]
 }

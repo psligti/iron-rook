@@ -11,6 +11,8 @@ from __future__ import annotations
 from typing import List
 import logging
 
+from iron_rook.fsm.state import AgentState
+
 from iron_rook.review.base import BaseReviewerAgent, ReviewContext
 from iron_rook.review.contracts import (
     ReviewOutput,
@@ -24,7 +26,17 @@ logger = logging.getLogger(__name__)
 class ReleaseChangelogReviewer(BaseReviewerAgent):
     """Reviewer agent for release hygiene and changelog compliance."""
 
+    FSM_TRANSITIONS: dict[AgentState, set[AgentState]] = {
+        AgentState.IDLE: {AgentState.INITIALIZING},
+        AgentState.INITIALIZING: {AgentState.READY, AgentState.FAILED},
+        AgentState.READY: {AgentState.RUNNING, AgentState.FAILED},
+        AgentState.RUNNING: {AgentState.COMPLETED, AgentState.FAILED},
+        AgentState.COMPLETED: set(),
+        AgentState.FAILED: set(),
+    }
+
     def __init__(self) -> None:
+        super().__init__()
         self.agent_name = "release_changelog"
 
     def get_agent_name(self) -> str:

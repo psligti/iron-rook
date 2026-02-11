@@ -1,7 +1,10 @@
 """Dependency & License Review Subagent implementation."""
+
 from __future__ import annotations
 
 from typing import List
+from iron_rook.fsm.state import AgentState
+
 from iron_rook.review.base import BaseReviewerAgent, ReviewContext
 from iron_rook.review.contracts import (
     ReviewOutput,
@@ -42,6 +45,15 @@ Your agent name is "dependencies"."""
 
 class DependencyLicenseReviewer(BaseReviewerAgent):
     """Reviewer agent for dependency and license compliance."""
+
+    FSM_TRANSITIONS: dict[AgentState, set[AgentState]] = {
+        AgentState.IDLE: {AgentState.INITIALIZING},
+        AgentState.INITIALIZING: {AgentState.READY, AgentState.FAILED},
+        AgentState.READY: {AgentState.RUNNING, AgentState.FAILED},
+        AgentState.RUNNING: {AgentState.COMPLETED, AgentState.FAILED},
+        AgentState.COMPLETED: set(),
+        AgentState.FAILED: set(),
+    }
 
     def get_agent_name(self) -> str:
         """Return the agent name."""

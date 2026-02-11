@@ -11,6 +11,8 @@ from __future__ import annotations
 from typing import List
 import logging
 
+from iron_rook.fsm.state import AgentState
+
 from iron_rook.review.base import BaseReviewerAgent, ReviewContext
 from iron_rook.review.contracts import (
     ReviewOutput,
@@ -18,6 +20,7 @@ from iron_rook.review.contracts import (
 )
 
 logger = logging.getLogger(__name__)
+
 
 class DocumentationReviewer(BaseReviewerAgent):
     """Documentation reviewer agent that checks for documentation coverage.
@@ -28,6 +31,15 @@ class DocumentationReviewer(BaseReviewerAgent):
     - Missing configuration documentation
     - Missing usage examples
     """
+
+    FSM_TRANSITIONS: dict[AgentState, set[AgentState]] = {
+        AgentState.IDLE: {AgentState.INITIALIZING},
+        AgentState.INITIALIZING: {AgentState.READY, AgentState.FAILED},
+        AgentState.READY: {AgentState.RUNNING, AgentState.FAILED},
+        AgentState.RUNNING: {AgentState.COMPLETED, AgentState.FAILED},
+        AgentState.COMPLETED: set(),
+        AgentState.FAILED: set(),
+    }
 
     def get_agent_name(self) -> str:
         """Return the agent identifier."""

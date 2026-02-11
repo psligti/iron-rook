@@ -6,8 +6,68 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 import pydantic as pd
 
+from dawn_kestrel.core.result import Result, Ok, Err, Pass
+from iron_rook.fsm.state import AgentState
+
+from iron_rook.fsm.loop_fsm import LoopFSM
+from iron_rook.fsm.loop_state import LoopState
 from iron_rook.review.contracts import ReviewOutput
 from iron_rook.review.verifier import FindingsVerifier
+
+
+def _map_loop_state_to_agent_state(loop_state: LoopState) -> AgentState:
+    """Map LoopState to AgentState for backward compatibility.
+
+    Args:
+        loop_state: The LoopState to map.
+
+    Returns:
+        The corresponding AgentState.
+    """
+    # Mapping: LoopFSM states -> AgentState
+    # INTAKE (starting) -> IDLE
+    # PLAN (planning) -> INITIALIZING
+    # ACT (executing) -> RUNNING
+    # SYNTHESIZE (preparing) -> READY
+    # DONE (completed) -> COMPLETED
+    # FAILED/STOPPED (error) -> FAILED
+    mapping = {
+        LoopState.INTAKE: AgentState.IDLE,
+        LoopState.PLAN: AgentState.INITIALIZING,
+        LoopState.ACT: AgentState.RUNNING,
+        LoopState.SYNTHESIZE: AgentState.READY,
+        LoopState.DONE: AgentState.COMPLETED,
+        LoopState.FAILED: AgentState.FAILED,
+        LoopState.STOPPED: AgentState.FAILED,
+    }
+    return mapping[loop_state]
+
+
+def _map_agent_state_to_loop_state(agent_state: AgentState) -> LoopState:
+    """Map AgentState to LoopState for state transitions.
+
+    Args:
+        agent_state: The AgentState to map.
+
+    Returns:
+        The corresponding LoopState.
+    """
+    # Reverse mapping: AgentState -> LoopFSM states
+    # IDLE -> INTAKE
+    # INITIALIZING -> PLAN
+    # RUNNING -> ACT
+    # READY -> SYNTHESIZE
+    # COMPLETED -> DONE
+    # FAILED -> FAILED
+    mapping = {
+        AgentState.IDLE: LoopState.INTAKE,
+        AgentState.INITIALIZING: LoopState.PLAN,
+        AgentState.RUNNING: LoopState.ACT,
+        AgentState.READY: LoopState.SYNTHESIZE,
+        AgentState.COMPLETED: LoopState.DONE,
+        AgentState.FAILED: LoopState.FAILED,
+    }
+    return mapping[agent_state]
 
 
 def _match_glob_pattern(file_path: str, pattern: str) -> bool:
@@ -81,16 +141,78 @@ class BaseReviewerAgent(ABC):
     all review agents.
     """
 
-    def __init__(self, verifier: FindingsVerifier | None = None) -> None:
+    def __init__(
+        self,
+        verifier: FindingsVerifier | None = None,
+        max_retries: int = 3,
+        agent_runtime: object | None = None,
+    ) -> None:
         """Initialize base reviewer with optional verifier strategy.
 
         Args:
             verifier: FindingsVerifier strategy instance. If None, uses
                 GrepFindingsVerifier by default.
+            max_retries: Maximum number of retry attempts for failed operations. Default: 3.
+            agent_runtime: Optional AgentRuntime for executing sub-loops.
         """
         from iron_rook.review.verifier import GrepFindingsVerifier
 
         self._verifier = verifier or GrepFindingsVerifier()
+        self._fsm = LoopFSM(max_retries=max_retries, agent_runtime=agent_runtime)
+
+    @property
+    def state(self) -> AgentState:
+        """Get the current agent state.
+
+        Returns:
+            The current AgentState from the internal state machine,
+            mapped from LoopState to AgentState for backward compatibility.
+        """
+        loop_state = self._fsm.current_state
+        return _map_loop_state_to_agent_state(loop_state)
+
+    def get_valid_transitions(self) -> dict[AgentState, set[AgentState]]:
+        """Get the valid transitions for this agent.
+
+        Returns the agent's FSM_TRANSITIONS class attribute if present,
+        otherwise falls back to the default transitions from dawn_kestrel.
+
+        Returns:
+            Dict mapping each AgentState to its set of valid target states.
+
+        Note:
+            This is a non-abstract method to allow instantiation before
+            per-agent FSM_TRANSITIONS are added (Tasks 5-14).
+        """
+        from iron_rook.fsm.loop_fsm import FSM_TRANSITIONS
+        from typing import cast
+
+        if hasattr(self.__class__, "FSM_TRANSITIONS"):
+            return cast(dict[AgentState, set[AgentState]], self.__class__.FSM_TRANSITIONS)
+        return FSM_TRANSITIONS
+
+    def _transition_to(self, new_state: AgentState) -> None:
+        """Transition the agent to a new state with error handling.
+
+        Wraps the LoopFSM's transition_to() method, handling
+        errors with actionable error messages.
+
+        Args:
+            new_state: The target AgentState to transition to (mapped to LoopState internally).
+
+        Raises:
+            RuntimeError: If the transition is invalid, with a descriptive
+                error message indicating the attempted transition and
+                valid alternatives.
+        """
+        # Map AgentState to LoopState for internal state machine
+        loop_state = _map_agent_state_to_loop_state(new_state)
+        result = self._fsm.transition_to(loop_state)
+        if result.is_err():
+            from typing import cast
+
+            err = cast(Err[LoopState], result)
+            raise RuntimeError(f"[{self.__class__.__name__}] State transition failed: {err.error}")
 
     @abstractmethod
     async def review(self, context: ReviewContext) -> ReviewOutput:
@@ -283,6 +405,14 @@ class BaseReviewerAgent(ABC):
         logger = logging.getLogger(__name__)
         class_name = self.__class__.__name__
 
+        # Reset state to IDLE at start of each run for reusability
+        self._fsm.reset()
+
+        # State transitions: IDLE -> INITIALIZING -> RUNNING -> COMPLETED
+        # Simplified path: we're not doing a loop, just a single-pass review
+        self._transition_to(AgentState.INITIALIZING)
+        self._transition_to(AgentState.RUNNING)
+
         relevant_files = [
             file_path
             for file_path in context.changed_files
@@ -297,6 +427,7 @@ class BaseReviewerAgent(ABC):
             logger.info(
                 f"[{class_name}] No relevant files found, returning early with 'merge' severity"
             )
+            self._transition_to(AgentState.COMPLETED)
             return ReviewOutput(
                 agent=self.get_agent_name(),
                 summary=no_relevance_summary
@@ -348,6 +479,7 @@ Please analyze the above changes and provide your review in the specified JSON f
             logger.info(f"[{class_name}]   severity: {output.severity}")
             logger.info(f"[{class_name}]   findings: {len(output.findings)}")
 
+            self._transition_to(AgentState.COMPLETED)
             return output
 
         except pd.ValidationError as e:
@@ -359,6 +491,7 @@ Please analyze the above changes and provide your review in the specified JSON f
                 f"[{class_name}]   Original response (first 500 chars): {response_text[:500]}..."
             )
 
+            self._transition_to(AgentState.COMPLETED)
             return ReviewOutput(
                 agent=self.get_agent_name(),
                 summary=f"Error parsing LLM response: {str(e)}",

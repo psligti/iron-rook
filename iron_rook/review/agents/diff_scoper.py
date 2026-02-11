@@ -1,7 +1,10 @@
 """Diff Scoper Subagent - pre-pass reviewer for diff risk classification and routing."""
+
 from __future__ import annotations
 from typing import List
 import logging
+
+from iron_rook.fsm.state import AgentState
 
 from iron_rook.review.base import BaseReviewerAgent, ReviewContext
 from iron_rook.review.contracts import (
@@ -10,19 +13,27 @@ from iron_rook.review.contracts import (
 )
 
 
-
 logger = logging.getLogger(__name__)
 
 
 class DiffScoperReviewer(BaseReviewerAgent):
     """Pre-pass reviewer that classifies diff risk and routes attention to appropriate subagents.
 
-    This agent runs early in the review pipeline to:
-    1. Analyze the git diff to identify scope and magnitude of changes
+    This agent runs early in review pipeline to:
+    1. Analyze git diff to identify scope and magnitude of changes
     2. Classify risk level (high/medium/low) based on multiple factors
     3. Route attention findings to appropriate specialized reviewers
     4. Suggest minimal checks to run first for quick feedback
     """
+
+    FSM_TRANSITIONS: dict[AgentState, set[AgentState]] = {
+        AgentState.IDLE: {AgentState.INITIALIZING},
+        AgentState.INITIALIZING: {AgentState.READY, AgentState.FAILED},
+        AgentState.READY: {AgentState.RUNNING, AgentState.FAILED},
+        AgentState.RUNNING: {AgentState.COMPLETED, AgentState.FAILED},
+        AgentState.COMPLETED: set(),
+        AgentState.FAILED: set(),
+    }
 
     def get_agent_name(self) -> str:
         """Return the agent name."""

@@ -8,31 +8,26 @@ version = "0.1.0"
 description = "PR Review Agent - Multi-agent code review system using dawn-kestrel SDK"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
+license = { text = "MIT" }
 keywords = ["code-review", "agents", "ai", "llm", "pr-review"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
 ]
 
 dependencies = [
-    "dawn-kestrel @ file:///Users/parkersligting/develop/pt/worktrees/security-reviewer-smart-agent",
-    "click>=8.0",
-    "rich>=13.0",
-    "pydantic>=2.0",
+  "dawn-kestrel @ file:///Users/parkersligting/develop/pt/worktrees/harness-agent-rework",
+  "click>=8.0",
+  "rich>=13.0",
+  "pydantic>=2.0",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.0",
-    "pytest-asyncio>=0.21",
-    "ruff>=0.1",
-    "mypy>=1.0",
-]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.21", "ruff>=0.1", "mypy>=1.0"]
 
 [project.scripts]
 iron-rook = "iron_rook.review.cli:review"
@@ -57,9 +52,4 @@ warn_unused_ignores = true
 ignore_missing_imports = true
 
 [dependency-groups]
-dev = [
-    "pyright>=1.1.408",
-    "pytest>=9.0.2",
-    "ruff>=0.15.0",
-    "ty>=0.0.15",
-]
+dev = ["pyright>=1.1.408", "pytest>=9.0.2", "ruff>=0.15.0", "ty>=0.0.15"]
