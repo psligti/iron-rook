@@ -6,9 +6,11 @@ using SecurityPhaseLogger.
 
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
+import pydantic as pd
 
 from iron_rook.review.agents.security import SecurityReviewer
 from iron_rook.review.base import ReviewContext
+from iron_rook.review.contracts import ThinkingStep, ThinkingFrame, RunLog
 
 
 class TestExtractThinkingFromResponse:
@@ -259,7 +261,7 @@ class TestDelegatePhaseThinking:
         reviewer = SecurityReviewer()
 
         # Mock runner response with thinking
-        
+
         mock_execute_llm.return_value = """{
   "thinking": "Delegating auth TODOs to auth_security subagent",
   "phase": "delegate",
@@ -268,7 +270,6 @@ class TestDelegatePhaseThinking:
   },
   "next_phase_request": "collect"
 }"""
-        
 
         # Mock context
         context = ReviewContext(
@@ -301,7 +302,7 @@ class TestCollectPhaseThinking:
         reviewer = SecurityReviewer()
 
         # Mock runner response with thinking
-        
+
         mock_execute_llm.return_value = """{
   "thinking": "Validating all subagent results and marking TODOs complete",
   "phase": "collect",
@@ -310,7 +311,6 @@ class TestCollectPhaseThinking:
   },
   "next_phase_request": "consolidate"
 }"""
-        
 
         # Mock context
         context = ReviewContext(
@@ -345,14 +345,13 @@ class TestConsolidatePhaseThinking:
         reviewer = SecurityReviewer()
 
         # Mock runner response with thinking
-        
+
         mock_execute_llm.return_value = """{
   "thinking": "Merging findings from all subagents and de-duplicating",
   "phase": "consolidate",
   "data": {},
   "next_phase_request": "evaluate"
 }"""
-        
 
         # Mock context
         context = ReviewContext(
@@ -387,7 +386,7 @@ class TestEvaluatePhaseThinking:
         reviewer = SecurityReviewer()
 
         # Mock runner response with thinking
-        
+
         mock_execute_llm.return_value = """{
   "thinking": "Assessing severity and generating final risk report",
   "phase": "evaluate",
@@ -400,7 +399,6 @@ class TestEvaluatePhaseThinking:
   },
   "next_phase_request": "done"
 }"""
-        
 
         # Mock context
         context = ReviewContext(
@@ -433,7 +431,7 @@ class TestThinkingNotLoggedWhenEmpty:
         reviewer = SecurityReviewer()
 
         # Mock runner response WITHOUT thinking
-        
+
         mock_execute_llm.return_value = """{
   "phase": "intake",
   "data": {
@@ -443,7 +441,6 @@ class TestThinkingNotLoggedWhenEmpty:
   },
   "next_phase_request": "plan_todos"
 }"""
-        
 
         # Mock context
         context = ReviewContext(
@@ -465,3 +462,154 @@ class TestThinkingNotLoggedWhenEmpty:
         # Should have only operational logs, not extracted LLM thinking
         # When there's no thinking in the response, only the operational messages are logged
         assert any("complete" in call for call in calls)
+
+
+class TestThinkingModels:
+    """Test Pydantic models for thinking capture (ThinkingStep, ThinkingFrame, RunLog)."""
+
+    # ========================================================================
+    # ThinkingStep Tests
+    # ========================================================================
+
+    def test_thinking_step_valid_input(self):
+        """Verify ThinkingStep accepts all valid kind enum values."""
+        # Test all valid kinds
+        for kind in ["transition", "tool", "delegate", "gate", "stop"]:
+            step = ThinkingStep(
+                kind=kind,
+                why="Test reasoning",
+                evidence=["evidence 1", "evidence 2"],
+                next="next_state",
+                confidence="high",
+            )
+            assert step.kind == kind
+            assert step.why == "Test reasoning"
+            assert step.evidence == ["evidence 1", "evidence 2"]
+            assert step.next == "next_state"
+            assert step.confidence == "high"
+
+    def test_thinking_step_invalid_kind(self):
+        """Verify ThinkingStep rejects invalid kind enum values."""
+        with pytest.raises(pd.ValidationError) as exc_info:
+            ThinkingStep(kind="invalid_kind", why="Test reasoning")
+        assert "kind" in str(exc_info.value).lower()
+
+    def test_thinking_step_default_values(self):
+        """Verify ThinkingStep uses correct default values for optional fields."""
+        step = ThinkingStep(kind="transition", why="Test reasoning")
+        assert step.evidence == []
+        assert step.next is None
+        assert step.confidence == "medium"
+
+    def test_thinking_step_evidence_default_factory(self):
+        """Verify ThinkingStep evidence field uses list default_factory correctly."""
+        step1 = ThinkingStep(kind="transition", why="Test 1")
+        step2 = ThinkingStep(kind="transition", why="Test 2")
+        # Modify evidence in step1
+        step1.evidence.append("shared evidence")
+        # step2 evidence should remain empty (default_factory creates new list each time)
+        assert step1.evidence == ["shared evidence"]
+        assert step2.evidence == []
+
+    # ========================================================================
+    # ThinkingFrame Tests
+    # ========================================================================
+
+    def test_thinking_frame_valid_input(self):
+        """Verify ThinkingFrame accepts valid input with all fields."""
+        frame = ThinkingFrame(
+            state="intake",
+            goals=["Analyze PR changes", "Identify security risks"],
+            checks=["Check for SQL injection", "Verify authentication"],
+            risks=["Potential data leak", "Broken access control"],
+            steps=[
+                ThinkingStep(kind="transition", why="Start analysis", evidence=["PR has 3 files"]),
+                ThinkingStep(kind="tool", why="Run security scan", next="scan_complete"),
+            ],
+            decision="proceed to plan_todos",
+        )
+        assert frame.state == "intake"
+        assert len(frame.goals) == 2
+        assert len(frame.checks) == 2
+        assert len(frame.risks) == 2
+        assert len(frame.steps) == 2
+        assert frame.decision == "proceed to plan_todos"
+
+    def test_thinking_frame_timestamp(self):
+        """Verify ThinkingFrame ts field generates ISO-8601 timestamp with Z suffix."""
+        frame = ThinkingFrame(state="intake", decision="proceed")
+        assert frame.ts is not None
+        assert frame.ts.endswith("Z")
+        # Verify it's a valid ISO format timestamp
+        from datetime import datetime
+
+        # Parse the timestamp (should not raise exception)
+        parsed = datetime.fromisoformat(frame.ts.rstrip("Z"))
+        assert parsed is not None
+
+    def test_thinking_frame_default_lists(self):
+        """Verify ThinkingFrame list fields use default_factory correctly."""
+        frame1 = ThinkingFrame(state="intake", decision="proceed")
+        frame2 = ThinkingFrame(state="plan_todos", decision="delegate")
+        # Modify list in frame1
+        frame1.goals.append("shared goal")
+        frame1.checks.append("shared check")
+        frame1.risks.append("shared risk")
+        # frame2 lists should remain empty (default_factory creates new list each time)
+        assert frame1.goals == ["shared goal"]
+        assert frame2.goals == []
+        assert frame1.checks == ["shared check"]
+        assert frame2.checks == []
+        assert frame1.risks == ["shared risk"]
+        assert frame2.risks == []
+
+    # ========================================================================
+    # RunLog Tests
+    # ========================================================================
+
+    def test_run_log_valid_input(self):
+        """Verify RunLog accepts valid input with frames list."""
+        frame1 = ThinkingFrame(
+            state="intake",
+            goals=["Analyze PR"],
+            decision="proceed to plan_todos",
+        )
+        frame2 = ThinkingFrame(
+            state="plan_todos",
+            goals=["Create TODOs"],
+            decision="delegate",
+        )
+        log = RunLog(frames=[frame1, frame2])
+        assert len(log.frames) == 2
+        assert log.frames[0].state == "intake"
+        assert log.frames[1].state == "plan_todos"
+
+    def test_run_log_add_method(self):
+        """Verify RunLog add() method correctly appends frames."""
+        log = RunLog()
+        frame1 = ThinkingFrame(
+            state="intake",
+            goals=["Analyze PR"],
+            decision="proceed to plan_todos",
+        )
+        frame2 = ThinkingFrame(
+            state="plan_todos",
+            goals=["Create TODOs"],
+            decision="delegate",
+        )
+        log.add(frame1)
+        assert len(log.frames) == 1
+        assert log.frames[0].state == "intake"
+        log.add(frame2)
+        assert len(log.frames) == 2
+        assert log.frames[1].state == "plan_todos"
+
+    def test_run_log_default_frames(self):
+        """Verify RunLog frames field uses list default_factory correctly."""
+        log1 = RunLog()
+        log2 = RunLog()
+        # Add frame to log1
+        log1.frames.append(ThinkingFrame(state="intake", goals=["Test"], decision="proceed"))
+        # log2 frames should remain empty (default_factory creates new list each time)
+        assert len(log1.frames) == 1
+        assert len(log2.frames) == 0
