@@ -15,7 +15,9 @@ from iron_rook.review.contracts import (
     Scope,
     MergeGate,
     Finding,
+    RunLog,
     get_review_output_schema,
+    get_phase_output_schema,
 )
 from dawn_kestrel.core.harness import SimpleReviewAgentRunner
 
@@ -75,6 +77,7 @@ class SecurityReviewer(BaseReviewerAgent):
         self._phase_logger = SecurityPhaseLogger()
         self._phase_outputs: Dict[str, Any] = {}
         self._current_security_phase: str = "intake"
+        self._thinking_log = RunLog()
 
     @property
     def state(self):
@@ -195,7 +198,7 @@ class SecurityReviewer(BaseReviewerAgent):
         )
 
         # Build phase-specific prompt
-        system_prompt = self._get_phase_prompt("INTAKE")
+        system_prompt = self._get_phase_prompt("intake")
 
         # Build user message with context
         user_message = self._build_intake_message(context)
@@ -231,7 +234,7 @@ class SecurityReviewer(BaseReviewerAgent):
         )
 
         # Build phase-specific prompt
-        system_prompt = self._get_phase_prompt("PLAN_TODOS")
+        system_prompt = self._get_phase_prompt("plan_todos")
 
         # Build user message with context
         user_message = self._build_plan_todos_message(context)
@@ -268,7 +271,7 @@ class SecurityReviewer(BaseReviewerAgent):
         )
 
         # Build phase-specific prompt
-        system_prompt = self._get_phase_prompt("DELEGATE")
+        system_prompt = self._get_phase_prompt("delegate")
 
         # Build user message with context
         user_message = self._build_delegate_message(context)
@@ -300,7 +303,7 @@ class SecurityReviewer(BaseReviewerAgent):
         self._phase_logger.log_thinking("COLLECT", "Validating and aggregating subagent results")
 
         # Build phase-specific prompt
-        system_prompt = self._get_phase_prompt("COLLECT")
+        system_prompt = self._get_phase_prompt("collect")
 
         # Build user message with context
         user_message = self._build_collect_message(context)
@@ -334,7 +337,7 @@ class SecurityReviewer(BaseReviewerAgent):
         )
 
         # Build phase-specific prompt
-        system_prompt = self._get_phase_prompt("CONSOLIDATE")
+        system_prompt = self._get_phase_prompt("consolidate")
 
         # Build user message with context
         user_message = self._build_consolidate_message(context)
@@ -370,7 +373,7 @@ class SecurityReviewer(BaseReviewerAgent):
         )
 
         # Build phase-specific prompt
-        system_prompt = self._get_phase_prompt("EVALUATE")
+        system_prompt = self._get_phase_prompt("evaluate")
 
         # Build user message with context
         user_message = self._build_evaluate_message(context)
@@ -405,7 +408,7 @@ class SecurityReviewer(BaseReviewerAgent):
 
 You are in the {phase} phase of the 6-phase security review FSM.
 
-{get_review_output_schema()}
+{get_phase_output_schema(phase)}
 
 Your agent name is "security_fsm".
 
@@ -486,6 +489,8 @@ Task:
 2. Mark TODO status as done/blocked and explain.
 3. Identify any issues with results.
 
+CRITICAL: After validation, you MUST proceed to the CONSOLIDATE phase. Do NOT transition to any other phase.
+
 Output JSON format:
 {
   "phase": "collect",
@@ -495,6 +500,8 @@ Output JSON format:
   },
   "next_phase_request": "consolidate"
 }
+
+REMEMBER: The next phase MUST be "consolidate" - this is the only valid transition from COLLECT.
 """,
             "CONSOLIDATE": """CONSOLIDATE Phase:
 Task:
@@ -811,6 +818,19 @@ Output JSON format:
 
         # Determine merge gate decision
         overall_risk = risk_assessment.get("overall", "low")
+
+        # Map security risk assessment to ReviewOutput.severity
+        # ReviewOutput.severity accepts: "merge", "warning", "critical", "blocking"
+        # Security risk uses: "critical", "high", "medium", "low"
+        if overall_risk == "critical":
+            review_severity = "critical"
+        elif overall_risk == "high":
+            review_severity = "critical"
+        elif overall_risk == "medium":
+            review_severity = "warning"
+        else:  # low or no issues
+            review_severity = "merge"
+
         if overall_risk in ("critical", "high"):
             decision = "needs_changes"
             must_fix = [f.title for f in all_findings if f.severity in ("critical", "high")]
@@ -830,7 +850,7 @@ Output JSON format:
             agent=self.get_agent_name(),
             summary=f"Security review complete. Overall risk: {overall_risk.upper()}. "
             f"Found {len(all_findings)} issues with {confidence:.0%} confidence.",
-            severity=overall_risk,
+            severity=review_severity,
             scope=Scope(
                 relevant_files=relevant_files,
                 ignored_files=[],
@@ -882,7 +902,8 @@ Output JSON format:
     def get_system_prompt(self) -> str:
         """Return the system prompt for this reviewer agent."""
         # System prompt is phase-specific, returned by _get_phase_prompt()
-        return self._get_phase_prompt("INTAKE")
+        # Return intake phase prompt for initial context building
+        return self._get_phase_prompt("intake")
 
     def get_relevant_file_patterns(self) -> List[str]:
         """Return file patterns this reviewer is relevant to."""
