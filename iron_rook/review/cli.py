@@ -10,6 +10,7 @@ from typing import Literal
 
 import click
 from rich.console import Console
+from rich.logging import RichHandler
 
 from iron_rook.review.base import BaseReviewerAgent
 
@@ -227,7 +228,11 @@ def setup_logging(verbose: bool = False) -> None:
     date_format = "%H:%M:%S"
 
     logging.basicConfig(
-        level=log_level, format=log_format, datefmt=date_format, stream=sys.stdout, force=True
+        level=log_level,
+        format=log_format,
+        datefmt=date_format,
+        handlers=[RichHandler()],
+        force=True,
     )
 
     from dawn_kestrel.core.settings import settings
