@@ -441,11 +441,54 @@ class SecurityReviewer(BaseReviewerAgent):
         if thinking:
             self._phase_logger.log_thinking("COLLECT", thinking)
 
+        # Parse JSON response
+        output = self._parse_phase_response(response_text, "collect")
+
+        goals = [
+            "Validate subagent results and findings",
+            "Mark TODO statuses based on completion",
+            "Ensure findings quality and completeness",
+        ]
+        checks = [
+            "Verify all subagent responses are received and valid",
+            "Validate findings structure and required fields",
+            "Ensure TODO status updates are consistent",
+        ]
+        risks = [
+            "Malformed subagent responses",
+            "Incomplete or inconsistent findings",
+            "Missing status updates for TODOs",
+        ]
+
+        steps = []
+        if thinking:
+            steps.append(
+                ThinkingStep(
+                    kind="transition",
+                    why=thinking,
+                    evidence=["LLM response analysis"],
+                    next=output.get("next_phase_request", "consolidate"),
+                    confidence="medium",
+                )
+            )
+
+        decision = output.get("next_phase_request", "consolidate")
+
+        frame = ThinkingFrame(
+            state="collect",
+            goals=goals,
+            checks=checks,
+            risks=risks,
+            steps=steps,
+            decision=decision,
+        )
+
+        self._phase_logger.log_thinking_frame(frame)
+        self._thinking_log.add(frame)
+
         # Log thinking output
         self._phase_logger.log_thinking("COLLECT", "COLLECT complete, all TODO statuses marked")
 
-        # Parse JSON response
-        output = self._parse_phase_response(response_text, "collect")
         return output
 
     async def _run_consolidate(self, context: ReviewContext) -> Dict[str, Any]:
