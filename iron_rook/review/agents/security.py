@@ -369,7 +369,6 @@ class SecurityReviewer(BaseReviewerAgent):
         # Parse JSON response
         output = self._parse_phase_response(response_text, "delegate")
 
-        # Create ThinkingFrame with extracted data
         goals = [
             "Generate subagent requests for delegated TODOs",
             "Create local analysis plans for self-assigned TODOs",
@@ -386,7 +385,6 @@ class SecurityReviewer(BaseReviewerAgent):
             "Self-analysis may miss complex security patterns",
         ]
 
-        # Create ThinkingStep from extracted thinking
         steps = []
         if thinking:
             steps.append(
@@ -399,10 +397,8 @@ class SecurityReviewer(BaseReviewerAgent):
                 )
             )
 
-        # Get decision from output
         decision = output.get("next_phase_request", "collect")
 
-        # Create ThinkingFrame
         frame = ThinkingFrame(
             state="delegate",
             goals=goals,
@@ -412,10 +408,7 @@ class SecurityReviewer(BaseReviewerAgent):
             decision=decision,
         )
 
-        # Log ThinkingFrame using phase logger
         self._phase_logger.log_thinking_frame(frame)
-
-        # Add ThinkingFrame to thinking log accumulator
         self._thinking_log.add(frame)
 
         # Log thinking output
