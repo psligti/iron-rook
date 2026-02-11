@@ -11,6 +11,7 @@ import pydantic as pd
 from iron_rook.review.agents.security import SecurityReviewer
 from iron_rook.review.base import ReviewContext
 from iron_rook.review.contracts import ThinkingStep, ThinkingFrame, RunLog
+from iron_rook.review.security_phase_logger import SecurityPhaseLogger
 
 
 class TestExtractThinkingFromResponse:
@@ -613,3 +614,169 @@ class TestThinkingModels:
         # log2 frames should remain empty (default_factory creates new list each time)
         assert len(log1.frames) == 1
         assert len(log2.frames) == 0
+
+
+class TestPhaseLoggerFrame:
+    """Test SecurityPhaseLogger.log_thinking_frame() method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        from iron_rook.review.security_phase_logger import SecurityPhaseLogger
+
+        self.logger = SecurityPhaseLogger(enable_color=True)
+
+    def test_log_thinking_frame_header(self):
+        """Verify log_thinking_frame displays state header with correct phase color."""
+        from iron_rook.review.security_phase_logger import SecurityPhaseLogger
+        from unittest.mock import patch
+
+        logger = SecurityPhaseLogger(enable_color=True)
+        frame = ThinkingFrame(state="intake", decision="proceed")
+
+        # Mock console.print to capture calls
+        with patch.object(logger._console, "print") as mock_print:
+            logger.log_thinking_frame(frame)
+
+            # Verify header was printed with correct content
+            assert mock_print.called
+            calls = [str(call) for call in mock_print.call_args_list]
+            # Should contain the state header
+            assert any("INTAKE" in call for call in calls)
+
+    def test_log_thinking_frame_goals_checks_risks(self):
+        """Verify log_thinking_frame displays goals/checks/risks with bullets."""
+        from iron_rook.review.security_phase_logger import SecurityPhaseLogger
+        from unittest.mock import patch
+
+        logger = SecurityPhaseLogger(enable_color=True)
+        frame = ThinkingFrame(
+            state="plan_todos",
+            goals=["Create security TODOs", "Identify high-risk areas"],
+            checks=["Verify SQL injection patterns", "Check authentication flows"],
+            risks=["Incomplete validation", "Weak session management"],
+            decision="delegate",
+        )
+
+        # Mock console.print to capture calls
+        with patch.object(logger._console, "print") as mock_print:
+            logger.log_thinking_frame(frame)
+
+            # Verify bullets were printed for goals, checks, risks
+            assert mock_print.called
+            calls = [str(call) for call in mock_print.call_args_list]
+            combined_calls = " ".join(calls)
+
+            # Check that goals, checks, risks labels appear
+            assert "Goals:" in combined_calls
+            assert "Checks:" in combined_calls
+            assert "Risks:" in combined_calls
+
+            # Check that content items appear
+            assert "Create security TODOs" in combined_calls
+            assert "Verify SQL injection patterns" in combined_calls
+            assert "Incomplete validation" in combined_calls
+
+    def test_log_thinking_frame_steps(self):
+        """Verify log_thinking_frame displays thinking steps with all fields."""
+        from iron_rook.review.security_phase_logger import SecurityPhaseLogger
+        from unittest.mock import patch
+
+        logger = SecurityPhaseLogger(enable_color=True)
+        step1 = ThinkingStep(
+            kind="transition",
+            why="Need to gather more context",
+            evidence=["PR has 5 files changed", "Changes touch auth module"],
+            next="continue",
+            confidence="high",
+        )
+        step2 = ThinkingStep(
+            kind="tool",
+            why="Run security scan",
+            next="scan_results",
+            confidence="medium",
+        )
+        frame = ThinkingFrame(state="intake", steps=[step1, step2], decision="proceed")
+
+        # Mock console.print to capture calls
+        with patch.object(logger._console, "print") as mock_print:
+            logger.log_thinking_frame(frame)
+
+            # Verify step content was printed
+            assert mock_print.called
+            calls = [str(call) for call in mock_print.call_args_list]
+            combined_calls = " ".join(calls)
+
+            # Check that step fields appear
+            assert "Step 1" in combined_calls
+            assert "transition" in combined_calls
+            assert "Need to gather more context" in combined_calls
+            assert "Evidence:" in combined_calls
+            assert "PR has 5 files changed" in combined_calls
+            assert "Next:" in combined_calls
+            assert "continue" in combined_calls
+            assert "Confidence:" in combined_calls
+            assert "high" in combined_calls
+
+    def test_log_thinking_frame_decision(self):
+        """Verify log_thinking_frame displays decision field."""
+        from iron_rook.review.security_phase_logger import SecurityPhaseLogger
+        from unittest.mock import patch
+
+        logger = SecurityPhaseLogger(enable_color=True)
+        frame = ThinkingFrame(state="evaluate", decision="approve with minor comments")
+
+        # Mock console.print to capture calls
+        with patch.object(logger._console, "print") as mock_print:
+            logger.log_thinking_frame(frame)
+
+            # Verify decision was printed
+            assert mock_print.called
+            calls = [str(call) for call in mock_print.call_args_list]
+            combined_calls = " ".join(calls)
+
+            # Check that decision appears
+            assert "Decision:" in combined_calls
+            assert "approve with minor comments" in combined_calls
+
+    def test_log_thinking_frame_logs_to_logger(self):
+        """Verify log_thinking_frame logs to internal logger."""
+        from iron_rook.review.security_phase_logger import SecurityPhaseLogger
+        import logging
+
+        logger = SecurityPhaseLogger(enable_color=True)
+        frame = ThinkingFrame(
+            state="consolidate",
+            goals=["Merge findings"],
+            checks=["Verify duplicates"],
+            risks=["Missing data"],
+            steps=[
+                ThinkingStep(kind="gate", why="Check completeness", confidence="high"),
+            ],
+            decision="proceed",
+        )
+
+        # Capture log output using caplog-style approach
+        import io
+
+        log_capture = io.StringIO()
+        handler = logging.StreamHandler(log_capture)
+        handler.setLevel(logging.DEBUG)
+        logger._logger.addHandler(handler)
+
+        try:
+            logger.log_thinking_frame(frame)
+
+            # Get logged output
+            log_output = log_capture.getvalue()
+
+            # Verify structured log entry
+            assert "consolidate" in log_output
+            assert "ThinkingFrame" in log_output
+            # Verify counts in log message
+            assert "goals=1" in log_output
+            assert "checks=1" in log_output
+            assert "risks=1" in log_output
+            assert "steps=1" in log_output
+            assert "decision=proceed" in log_output
+        finally:
+            logger._logger.removeHandler(handler)
