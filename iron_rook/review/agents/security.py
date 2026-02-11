@@ -203,6 +203,11 @@ class SecurityReviewer(BaseReviewerAgent):
         # Execute LLM call
         response_text = await self._execute_llm(system_prompt, user_message)
 
+        # Extract and log LLM thinking from response
+        thinking = self._extract_thinking_from_response(response_text)
+        if thinking:
+            self._phase_logger.log_thinking("INTAKE", thinking)
+
         # Log thinking output
         self._phase_logger.log_thinking(
             "INTAKE", f"INTAKE analysis complete, preparing to plan todos"
@@ -233,6 +238,11 @@ class SecurityReviewer(BaseReviewerAgent):
 
         # Execute LLM call
         response_text = await self._execute_llm(system_prompt, user_message)
+
+        # Extract and log LLM thinking from response
+        thinking = self._extract_thinking_from_response(response_text)
+        if thinking:
+            self._phase_logger.log_thinking("PLAN_TODOS", thinking)
 
         # Log thinking output
         self._phase_logger.log_thinking(
@@ -266,6 +276,11 @@ class SecurityReviewer(BaseReviewerAgent):
         # Execute LLM call
         response_text = await self._execute_llm(system_prompt, user_message)
 
+        # Extract and log LLM thinking from response
+        thinking = self._extract_thinking_from_response(response_text)
+        if thinking:
+            self._phase_logger.log_thinking("DELEGATE", thinking)
+
         # Log thinking output
         self._phase_logger.log_thinking("DELEGATE", "DELEGATE complete, subagents dispatched")
 
@@ -292,6 +307,11 @@ class SecurityReviewer(BaseReviewerAgent):
 
         # Execute LLM call
         response_text = await self._execute_llm(system_prompt, user_message)
+
+        # Extract and log LLM thinking from response
+        thinking = self._extract_thinking_from_response(response_text)
+        if thinking:
+            self._phase_logger.log_thinking("COLLECT", thinking)
 
         # Log thinking output
         self._phase_logger.log_thinking("COLLECT", "COLLECT complete, all TODO statuses marked")
@@ -321,6 +341,11 @@ class SecurityReviewer(BaseReviewerAgent):
 
         # Execute LLM call
         response_text = await self._execute_llm(system_prompt, user_message)
+
+        # Extract and log LLM thinking from response
+        thinking = self._extract_thinking_from_response(response_text)
+        if thinking:
+            self._phase_logger.log_thinking("CONSOLIDATE", thinking)
 
         # Log thinking output
         self._phase_logger.log_thinking(
@@ -352,6 +377,11 @@ class SecurityReviewer(BaseReviewerAgent):
 
         # Execute LLM call
         response_text = await self._execute_llm(system_prompt, user_message)
+
+        # Extract and log LLM thinking from response
+        thinking = self._extract_thinking_from_response(response_text)
+        if thinking:
+            self._phase_logger.log_thinking("EVALUATE", thinking)
 
         # Log thinking output
         self._phase_logger.log_thinking("EVALUATE", "EVALUATE complete, final report generated")
@@ -636,6 +666,60 @@ Output JSON format:
         response_text = await runner.run_with_retry(system_prompt, user_message)
         logger.info(f"[{self.__class__.__name__}] Got LLM response: {len(response_text)} chars")
         return response_text
+
+    def _extract_thinking_from_response(self, response_text: str) -> str:
+        """Extract thinking/reasoning from LLM response text.
+
+        Attempts to extract thinking in multiple formats:
+        1. JSON "thinking" field at top level
+        2. JSON "thinking" field inside "data" object
+        3. <thinking>...</thinking> tags
+        4. Returns empty string if no thinking found
+
+        Args:
+            response_text: Raw LLM response text
+
+        Returns:
+            Extracted thinking string, or empty string if not found
+        """
+        # Try to parse as JSON first
+        try:
+            # Strip markdown code blocks if present
+            json_text = response_text
+            if "```json" in response_text:
+                start = response_text.find("```json") + 7
+                end = response_text.find("```", start)
+                json_text = response_text[start:end].strip()
+            elif "```" in response_text:
+                start = response_text.find("```") + 3
+                end = response_text.find("```", start)
+                json_text = response_text[start:end].strip()
+
+            response_json = json.loads(json_text)
+
+            # Check for "thinking" field at top level
+            if "thinking" in response_json:
+                thinking = response_json["thinking"]
+                return str(thinking) if thinking else ""
+
+            # Check for "thinking" field inside "data" object
+            if "data" in response_json and isinstance(response_json["data"], dict):
+                if "thinking" in response_json["data"]:
+                    thinking = response_json["data"]["thinking"]
+                    return str(thinking) if thinking else ""
+
+        except (json.JSONDecodeError, KeyError, ValueError):
+            # Not valid JSON or missing fields, try tag format
+            pass
+
+        # Try <thinking>...</thinking> tags
+        if "<thinking>" in response_text and "</thinking>" in response_text:
+            start = response_text.find("<thinking>") + len("<thinking>")
+            end = response_text.find("</thinking>")
+            thinking = response_text[start:end].strip()
+            return thinking
+
+        return ""
 
     def _parse_phase_response(self, response_text: str, expected_phase: str) -> Dict[str, Any]:
         """Parse phase JSON response with error handling.

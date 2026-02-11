@@ -428,7 +428,7 @@ Parallel Speedup: ~35% faster than sequential
   - Files: `iron_rook/review/cli.py` (updated setup_logging), tests for CLI
   - Pre-commit: `pytest tests/unit/review/test_cli_rich_logging.py -q`
 
-- [ ] 3. Create subagent base classes with FSM infrastructure
+- [x] 3. Create subagent base classes with FSM infrastructure
 
   **What to do**:
   - Create `iron_rook/review/subagents/security_subagents.py`
@@ -530,7 +530,7 @@ Parallel Speedup: ~35% faster than sequential
   - Files: `iron_rook/review/subagents/security_subagents.py`, tests for subagents
   - Pre-commit: `pytest tests/unit/review/subagents/test_security_subagents.py -q`
 
-- [ ] 4. Implement 6-phase FSM in SecurityReviewer
+- [x] 4. Implement 6-phase FSM in SecurityReviewer
 
   **What to do**:
   - Create new FSM class `SecurityFSMAgent` or refactor existing SecurityReviewer
@@ -634,7 +634,7 @@ Parallel Speedup: ~35% faster than sequential
   - Files: `iron_rook/review/agents/security.py` (refactored), tests for FSM
   - Pre-commit: `pytest tests/unit/review/agents/test_security_fsm.py -q`
 
-- [ ] 5. Implement phase-specific thinking capture with phase logger
+- [x] 5. Implement phase-specific thinking capture with phase logger
 
   **What to do**:
   - Modify SecurityReviewer phase methods to use SecurityPhaseLogger
