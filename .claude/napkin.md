@@ -25,13 +25,15 @@
 - Registry pattern: `iron_rook/review/agents/__init__.py` imports all reviewers for centralized registration - clean, extensible
 - Shared dependencies (base classes) vs shared state: All reviewers import from `iron_rook.review.base` and `iron_rook.review.contracts` for common interfaces, but maintain independent state
 - Alternative implementations: Both `security.py` and `security_fsm.py` exist as alternative security reviewers
-- (approaches that succeeded)
+- LLM convergence pattern: "BIAS TOWARD DONE" instructions with explicit stop conditions prevent infinite loops. Key rules: any findings = prefer done, >= 2 iterations = strongly prefer done, more iterations rarely improve search/verification tasks
 
 ## Patterns That Don't Work
+- Strict "ALL criteria must be met" in LLM convergence prompts - causes infinite loops as LLM keeps finding minor gaps
 - (approaches that failed and why)
 
 ## Domain Notes
 - dawn-kestrel's AgentRuntime uses execute_agent which requires registered agents. FSM security orchestrator can use both AgentRuntime and direct LLMClient for phase execution
+- dawn-kestrel protocol mismatch pattern: SessionManagerLike protocol methods don't match DefaultSessionService implementation signatures. When using DefaultSessionService as SessionManagerLike, wrapper methods or duck-typing handlers are needed for: get_session (Result vs Optional), add_message (3 args vs Message object), list_messages (missing), add_part (missing)
 | 2026-02-10 | fsm_security_orchestrator.py | _load_phase_prompt() silently returned empty string for missing phase sections | Added MissingPhasePromptError exception with explicit checks for missing/empty sections and descriptive error messages |
 | 2026-02-10 | security_review_agent.md | Phase headers had inconsistent formatting (some with leading spaces) | Standardized all phase headers to `### {PHASE}` format (no leading space) for parser compatibility |
 
@@ -136,3 +138,18 @@
 
 
 | 2026-02-11 | self | Task 5 (SecurityPhaseLogger integration) already completed | All 6 SecurityReviewer phase methods already call log_thinking() at start. Tests pass (15/15). No changes needed. |
+
+| 2026-02-11 | security.py | Fixed COLLECT phase LLM hallucination issue | LLM was returning "next_phase_request": "execute" instead of "consolidate", causing invalid transition error | Added explicit CRITICAL and REMEMBER sections to prompt to enforce correct next phase value |
+| 2026-02-11 | security.py | FSM transitions validated correctly | FSM_TRANSITIONS dict has correct mapping: intake→plan_todos, plan_todos→delegate, delegate→collect/consolidate/evaluate/done, collect→consolidate, consolidate→evaluate, evaluate→done | Invalid transitions raise ValueError with descriptive messages |
+| 2026-02-11 | security.py | Issue documented in .sisyphus/notepads/security-agent-fsm-implementation/issues.md | Root cause: Prompt wasn't emphatic enough, LLM hallucinated "execute" from method name _execute_llm appearing in context | Fix: Added strong instructions emphasizing "consolidate" is the ONLY valid transition from COLLECT |
+
+| 2026-02-11 | security.py | Added Pydantic models for FSM phase outputs | Created 6 phase output models in contracts.py: IntakePhaseOutput, PlanTodosPhaseOutput, DelegatePhaseOutput, CollectPhaseOutput, ConsolidatePhaseOutput, EvaluatePhaseOutput | Added get_phase_output_schema(phase) function that uses model.model_json_schema() to generate schema | Updated base prompt to use {get_phase_output_schema(phase)} instead of hardcoded JSON | This ensures LLM sees exact schema structure, preventing hallucinations like "execute" issue |
+| 2026-02-11 | security.py | Updated import to include get_phase_output_schema | Added to import from contracts.py |
+| 2026-02-11 | contracts.py | Created 6 phase output Pydantic models with proper type constraints | Each model has phase, data, next_phase_request fields | Data models contain typed fields (e.g., Literal["intake"], List[str], Dict[str, List[dict]]) |
+
+| 2026-02-13 | security_subagent_dynamic.py | Subagent SYNTHESIZE phase not converging - kept looping with "More analysis needed" after 4 iterations with 8 findings | Root cause: Prompt was too strict ("Set goal_achieved: true ONLY if ALL acceptance criteria are met") + stagnation only triggered on zero findings | Fix: 1) Added "BIAS TOWARD DONE" instructions with explicit stop conditions (any findings = prefer done, >= 2 iterations = strongly prefer done), 2) Updated stagnation detection to also trigger after 3+ iterations with any findings (diminishing returns) |
+| 2026-02-13 | security_subagent_dynamic.py | Diminishing returns not detected by stagnation check | Original stagnation only checked all(count == 0) | Added second condition: if >= 3 iterations AND findings exist, force done - more iterations rarely produce better results for search/verification tasks |
+
+| 2026-02-13 | dawn-kestrel/runtime.py | 'Ok' object has no attribute 'project_id' | Protocol SessionManagerLike says get_session returns Optional[Session] but DefaultSessionService returns Result[Session | None] | Added runtime handling for both Result and Optional return types using hasattr check for is_err method |
+| 2026-02-13 | dawn-kestrel/session_service.py | add_message signature mismatch | Protocol says add_message(message: Message) but DefaultSessionService expected (session_id, role, text) | Made add_message accept both calling patterns using *args inspection |
+| 2026-02-13 | dawn-kestrel/session_service.py | Missing list_messages and add_part methods | DefaultSessionService didn't implement all SessionManagerLike protocol methods | Added list_messages() returning List[Message] and add_part(part) returning str |
