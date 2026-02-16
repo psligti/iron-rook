@@ -81,6 +81,7 @@ class SecurityWorkflowConfig:
     stagnation_threshold: int = 3
     confidence_threshold: float = 0.8
     max_risk_level: str = "high"
+    max_consecutive_empty_responses: int = 3  # Exit early if LLM keeps returning empty
 
 
 class SecurityWorkflowFSM(WorkflowFSM):
@@ -110,6 +111,7 @@ class SecurityWorkflowFSM(WorkflowFSM):
 
         self._security_config = config
         self._security_context = ""
+        self._consecutive_empty_responses = 0  # Track consecutive empty responses
         if config.repo_root:
             self._security_context = load_security_context(config.repo_root)
 
@@ -118,6 +120,37 @@ class SecurityWorkflowFSM(WorkflowFSM):
         if self.config.session_manager is None:
             raise RuntimeError("session_manager is required but was not configured")
         return self.config.session_manager
+
+    def _check_empty_response(self, response: str) -> bool:
+        """Check if response is empty and track consecutive empty responses.
+
+        Returns True if the workflow should exit due to too many empty responses.
+
+        Args:
+            response: The LLM response to check
+
+        Returns:
+            True if workflow should exit, False to continue
+        """
+        if not response or not response.strip():
+            self._consecutive_empty_responses += 1
+            logger.warning(
+                f"Empty response from LLM (consecutive: {self._consecutive_empty_responses}/"
+                f"{self._security_config.max_consecutive_empty_responses})"
+            )
+            if (
+                self._consecutive_empty_responses
+                >= self._security_config.max_consecutive_empty_responses
+            ):
+                logger.error(
+                    f"Too many consecutive empty responses ({self._consecutive_empty_responses}), "
+                    "exiting workflow early"
+                )
+                return True
+        else:
+            # Reset counter on successful response
+            self._consecutive_empty_responses = 0
+        return False
 
     def _build_context_summary(self) -> str:
         base_summary = super()._build_context_summary()
@@ -348,6 +381,10 @@ Respond with ONLY valid JSON matching the schema above.
         logger.info(f"[INTAKE] Raw response length: {len(result.response)} chars")
         logger.debug(f"[INTAKE] Raw response: {result.response[:500]}...")
 
+        if self._check_empty_response(result.response):
+            logger.error("[INTAKE] Too many empty responses, exiting")
+            return await self.transition_to(WorkflowState.DONE)
+
         if not result.response or len(result.response.strip()) == 0:
             logger.warning("[INTAKE] Empty response from LLM, using defaults")
             self.context.intent = "Security review of code changes"
@@ -435,6 +472,10 @@ Respond with ONLY valid JSON matching the schema above.
 
         logger.info(f"[PLAN] Raw response length: {len(result.response)} chars")
         logger.debug(f"[PLAN] Raw response: {result.response[:500]}...")
+
+        if self._check_empty_response(result.response):
+            logger.error("[PLAN] Too many empty responses, exiting")
+            return await self.transition_to(WorkflowState.DONE)
 
         if not result.response or len(result.response.strip()) == 0:
             logger.warning("[PLAN] Empty response from LLM, transitioning to DONE")
@@ -589,6 +630,10 @@ Respond with ONLY valid JSON matching the schema above.
         logger.info(f"[ACT] Raw response length: {len(result.response)} chars")
         logger.debug(f"[ACT] Raw response: {result.response[:500]}...")
 
+        if self._check_empty_response(result.response):
+            logger.error("[ACT] Too many empty responses, exiting")
+            return await self.transition_to(WorkflowState.DONE)
+
         if not result.response or len(result.response.strip()) == 0:
             logger.warning("[ACT] Empty response from LLM, skipping to SYNTHESIZE")
             self.context.last_act_output = ActOutput()
@@ -705,6 +750,10 @@ Respond with ONLY valid JSON matching the schema above.
         logger.info(f"[SYNTHESIZE] Raw response length: {len(result.response)} chars")
         logger.debug(f"[SYNTHESIZE] Raw response: {result.response[:500]}...")
 
+        if self._check_empty_response(result.response):
+            logger.error("[SYNTHESIZE] Too many empty responses, exiting")
+            return await self.transition_to(WorkflowState.DONE)
+
         if not result.response or len(result.response.strip()) == 0:
             logger.warning("[SYNTHESIZE] Empty response from LLM, skipping to CHECK")
             self.context.last_synthesize_output = SynthesizeOutput()
@@ -784,6 +833,10 @@ Respond with ONLY valid JSON matching the schema above.
 
         logger.info(f"[CHECK] Raw response length: {len(result.response)} chars")
         logger.debug(f"[CHECK] Raw response: {result.response[:500]}...")
+
+        if self._check_empty_response(result.response):
+            logger.error("[CHECK] Too many empty responses, exiting")
+            return await self.transition_to(WorkflowState.DONE)
 
         if not result.response or len(result.response.strip()) == 0:
             logger.warning("[CHECK] Empty response from LLM, defaulting to DONE")
