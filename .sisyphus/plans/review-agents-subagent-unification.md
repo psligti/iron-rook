@@ -522,7 +522,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ### Wave 2: Pilot - DocumentationReviewer
 
-- [ ] 7. Write tests for DocumentationFSM
+- [x] 7. Write tests for DocumentationFSM
 
   **What to do**:
   - Create `tests/unit/review/agents/test_documentation_fsm.py`

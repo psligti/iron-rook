@@ -240,3 +240,46 @@ class MyDelegationSkill(BaseDelegationSkill):
 - Templates are markdown files in `iron_rook/review/subagents/`
 - Base class is `base_subagent.py`
 - Full implementation reference: `security_subagent_dynamic.py`
+
+## 2026-02-16 - Task 7: DocumentationFSM Tests (TDD Red Phase)
+
+### Test File Created
+- `tests/unit/review/agents/test_documentation_fsm.py` - 27 tests in 9 test classes
+
+### Test Classes
+1. `TestDocumentationFSMInitialization` (4 tests) - FSM attribute checks
+2. `TestDocumentationFSMTransitions` (7 tests) - VALID_TRANSITIONS structure
+3. `TestDocumentationPhaseMethods` (5 tests) - Phase method existence
+4. `TestDocumentationPrefersDirectReview` (1 test) - Direct review preference
+5. `TestDocumentationPhaseLoggerIntegration` (2 tests) - Phase execution
+6. `TestDocumentationFilePatternsAndTools` (2 tests) - File patterns/tools
+7. `TestDocumentationReviewOutputGeneration` (2 tests) - Output generation
+8. `TestDocumentationInvalidTransitions` (2 tests) - Error handling
+9. `TestDocumentationFullFSMExecution` (2 tests) - End-to-end flow
+
+### TDD Red Phase Results
+- 21 tests failed (expected - FSM implementation doesn't exist)
+- 6 tests passed (existing functionality)
+- Failures document expected FSM implementation
+
+### Implementation Requirements (from test failures)
+1. Add `_adapter` or `_fsm` attribute for FSM management
+2. Add `_phase_logger` for phase logging
+3. Add `_current_phase` attribute (initial value: "intake")
+4. Add `VALID_TRANSITIONS` dict with phase transitions:
+   - intake → plan
+   - plan → act
+   - act → synthesize
+   - synthesize → check
+   - check → done
+5. Add phase methods: `_run_intake`, `_run_plan`, `_run_act`, `_run_synthesize`, `_run_check`
+6. Override `prefers_direct_review()` to return `True`
+7. Add `_build_review_output_from_check()` method
+8. Add `_build_error_review_output()` method
+9. Add `_transition_to_phase()` method
+
+### Test Pattern Used
+- Follows pattern from `test_security_fsm.py`
+- Uses shared fixtures from `conftest.py`
+- Uses `@pytest.mark.asyncio` for async tests
+- Uses `@patch` for mocking `SimpleReviewAgentRunner`
