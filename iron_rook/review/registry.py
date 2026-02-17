@@ -286,13 +286,13 @@ def _register_default_reviewers() -> None:
     ReviewerRegistry.register("linting", LintingReviewer, is_core=True)
     ReviewerRegistry.register("unit_tests", UnitTestsReviewer, is_core=True)
 
-    # Register optional reviewers
-    ReviewerRegistry.register("diff_scoper", DiffScoperReviewer, is_core=False)
-    ReviewerRegistry.register("requirements", RequirementsReviewer, is_core=False)
-    ReviewerRegistry.register("performance", PerformanceReliabilityReviewer, is_core=False)
-    ReviewerRegistry.register("dependencies", DependencyLicenseReviewer, is_core=False)
-    ReviewerRegistry.register("changelog", ReleaseChangelogReviewer, is_core=False)
-    ReviewerRegistry.register("delegate_todo", DelegateTodoSkill, is_core=False)
+    # Register core reviewers (all reviewers are now core)
+    ReviewerRegistry.register("diff_scoper", DiffScoperReviewer, is_core=True)
+    ReviewerRegistry.register("requirements", RequirementsReviewer, is_core=True)
+    ReviewerRegistry.register("performance", PerformanceReliabilityReviewer, is_core=True)
+    ReviewerRegistry.register("dependencies", DependencyLicenseReviewer, is_core=True)
+    ReviewerRegistry.register("changelog", ReleaseChangelogReviewer, is_core=True)
+    ReviewerRegistry.register("delegate_todo", DelegateTodoSkill, is_core=True)
 
 
 _register_default_reviewers()

@@ -1117,7 +1117,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ### Wave 5: Registry Update
 
-- [ ] 29. Update registry - mark all as core
+- [x] 29. Update registry - mark all as core
 
   **What to do**:
   - Modify `iron_rook/review/registry.py`
@@ -1171,7 +1171,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ---
 
-- [ ] 30. Update CLI - remove --include-optional flag
+- [x] 30. Update CLI - remove --include-optional flag
 
   **What to do**:
   - Modify `iron_rook/review/cli.py`
@@ -1218,7 +1218,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ---
 
-- [ ] 31. Update documentation
+- [x] 31. Update documentation
 
   **What to do**:
   - Update `README.md` to reflect new architecture

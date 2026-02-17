@@ -70,20 +70,23 @@ print(f"Total findings: {result.total_findings}")
 
 ## Built-in Reviewers
 
-### Core Reviewers (default)
-- **security**: Security vulnerability analysis
+All 11 reviewers are core agents, each specializing in a specific analysis domain:
+
 - **architecture**: Code architecture and design patterns
+- **changelog**: Release changelog compliance
+- **dependencies**: Dependency and license review
+- **diff_scoper**: Change scope and impact analysis
 - **documentation**: Documentation completeness and accuracy
-- **telemetry**: Telemetry and metrics review
 - **linting**: Code style and linting checks
+- **performance**: Performance and reliability analysis
+- **requirements**: Requirements traceability review
+- **security**: Security vulnerability analysis (uses FSM + subagent pattern)
+- **telemetry**: Telemetry and metrics review
 - **unit_tests**: Test coverage and quality
 
-### Optional Reviewers
-- **diff_scoper**: Change scope and impact analysis
-- **requirements**: Requirements traceability review
-- **performance**: Performance and reliability analysis
-- **dependencies**: Dependency and license review
-- **changelog**: Release changelog compliance
+### FSM + Subagent Pattern
+
+The security reviewer uses a Finite State Machine (FSM) architecture with specialized subagents for auth, injection, secrets, and dependency scanning. The FSM orchestrates phases: INTAKE → PLAN_TODOS → DELEGATE → COLLECT → CONSOLIDATE → EVALUATE → DONE, enabling parallel subagent execution and iterative analysis.
 
 ## Architecture
 

@@ -253,20 +253,15 @@ def setup_logging(verbose: bool = False) -> None:
     logging.getLogger("dawn_kestrel.core.plugin_discovery").setLevel(logging.WARNING)
 
 
-def get_subagents(include_optional: bool = False) -> list[BaseReviewerAgent]:
-    """Get list of subagents based on optional flag.
-
-    Args:
-        include_optional: If True, include optional subagents
+def get_subagents() -> list[BaseReviewerAgent]:
+    """Get list of all subagents.
 
     Returns:
-        List of reviewer agents
+        List of all reviewer agents
     """
     from iron_rook.review.registry import ReviewerRegistry
 
-    if include_optional:
-        return ReviewerRegistry.get_all_reviewers()
-    return ReviewerRegistry.get_core_reviewers()
+    return ReviewerRegistry.get_all_reviewers()
 
 
 def format_terminal_progress(agent_name: str, status: str, data: dict) -> None:
@@ -351,11 +346,6 @@ def format_terminal_error(agent_name: str, error_msg: str) -> None:
     help="Output format (default: terminal)",
 )
 @click.option(
-    "--include-optional",
-    is_flag=True,
-    help="Include optional review subagents",
-)
-@click.option(
     "--verbose",
     "-v",
     is_flag=True,
@@ -367,7 +357,6 @@ def review(
     base_ref: str,
     head_ref: str,
     output: Literal["json", "markdown", "terminal"],
-    include_optional: bool,
     verbose: bool,
 ) -> None:
     """Run PR review on a git repository.
@@ -400,7 +389,7 @@ def review(
             subagents = [ReviewerRegistry.create_reviewer(agent)]
             console.print(f"[cyan]Running only '{agent}' agent...[/cyan]")
         else:
-            subagents = get_subagents(include_optional)
+            subagents = get_subagents()
         console.print(f"[cyan]Running all {len(subagents)} agents...[/cyan]")
 
         if verbose:
@@ -414,7 +403,6 @@ def review(
             repo_root=str(repo_root),
             base_ref=base_ref,
             head_ref=head_ref,
-            include_optional=include_optional,
         )
 
         console.print(f"[cyan]Starting PR review...[/cyan]")
