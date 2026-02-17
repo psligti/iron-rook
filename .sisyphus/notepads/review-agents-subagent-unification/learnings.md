@@ -366,3 +366,58 @@ DocumentationDelegationSkill(BaseDelegationSkill)
 1. Run full test suite: `uv run python -m pytest tests/unit/review/agents/test_documentation_fsm.py -v`
 2. Verify imports with Python script
 3. Check LSP diagnostics for type errors
+
+## Task 10: DocumentationReviewer FSM Conversion (2026-02-16)
+
+### Implementation
+- Converted `DocumentationReviewer` from simple `_execute_review_with_runner()` pattern to full FSM pattern
+- File: `iron_rook/review/agents/documentation.py`
+- Follows security.py FSM pattern with 5 phases: INTAKE → PLAN → ACT → SYNTHESIZE → CHECK → DONE
+
+### Key Implementation Details
+- `VALID_TRANSITIONS` dict defines phase flow
+- `_fsm` attribute added (dict type) to satisfy test expectations for `_adapter` or `_fsm` attribute
+- `state` property returns string phase name (with `# type: ignore[override]` since base returns `AgentState`)
+- Uses `DocumentationDelegationSkill` in ACT phase for subagent dispatch
+- Module-level import of `SimpleReviewAgentRunner` required for test mocking to work
+
+### Severity Mapping Patterns
+1. **Finding.severity**: FSM uses `critical/high/medium/low` but `Finding.severity` expects `Literal["warning", "critical", "blocking"]`
+   - Mapping: `critical→critical`, `high→blocking`, `medium→warning`, `low→warning`
+
+2. **ReviewOutput.severity**: FSM uses `critical/high/medium/low` but `ReviewOutput.severity` expects `Literal["merge", "warning", "critical", "blocking"]`
+   - Mapping: `critical→critical`, `high→critical`, `medium→warning`, `low→warning`, `merge→merge`
+
+### Test Mocking Pattern
+- Tests patch `iron_rook.review.agents.documentation.SimpleReviewAgentRunner`
+- Module-level import required for patch to work (not inside method)
+- `@patch("iron_rook.review.agents.documentation.SimpleReviewAgentRunner")` at class level
+
+### Type Compatibility Notes
+- `# type: ignore[override]` needed for `state` property that returns `str` instead of `AgentState`
+- `# type: ignore[assignment]` needed for `_fsm` attribute that uses dict instead of `object | None`
+- `cast(Literal["warning", "critical", "blocking"], ...)` for severity values from mapping dict
+
+### Test Results
+- All 27 tests pass: `test_documentation_fsm.py`
+
+
+## Task 14: ArchitectureReviewer FSM Pattern Implementation
+
+### Pattern Applied
+Converted ArchitectureReviewer from simple `_execute_review_with_runner()` pattern to full FSM implementation following DocumentationReviewer pattern.
+
+### Key Implementation Details
+- VALID_TRANSITIONS: `intake→plan`, `plan→act`, `act→synthesize|done`, `synthesize→check`, `check→done`, `done→∅`
+- Phase methods: `_run_intake`, `_run_plan`, `_run_act`, `_run_synthesize`, `_run_check`
+- ACT phase uses `ArchitectureDelegationSkill` for subagent dispatch
+- `prefers_direct_review()` returns True (FSM manages its own LLM calls)
+- `state` property returns string phase name (not AgentState enum)
+
+### Test Coverage
+- 27 tests in `test_architecture_fsm.py` - all pass
+- Tests cover: initialization, transitions, phase methods, output generation, full FSM execution
+
+### File Structure
+`iron_rook/review/agents/architecture.py` - 848 lines (FSM implementation)
+`iron_rook/review/skills/architecture_delegation.py` - Delegation skill for ACT phase

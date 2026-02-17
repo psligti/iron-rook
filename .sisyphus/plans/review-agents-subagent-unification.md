@@ -748,7 +748,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ---
 
-- [ ] 11. Verify pilot end-to-end
+- [x] 11. Verify pilot end-to-end
 
   **What to do**:
   - Run full test suite for DocumentationReviewer
@@ -802,7 +802,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ### Wave 3: Remaining Core Reviewers
 
-- [ ] 12-14. Architecture Reviewer Conversion
+- [x] 12-14. Architecture Reviewer Conversion
 
   **What to do** (3 subtasks):
   - 12: Create `tests/unit/review/agents/test_architecture_fsm.py` (TDD red)
