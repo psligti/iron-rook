@@ -950,7 +950,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ### Wave 4: Optional → Core Promotions
 
-- [ ] 24. DiffScoper Reviewer Conversion
+- [x] 24. DiffScoper Reviewer Conversion
 
   **What to do**:
   - Create test file (TDD red)
@@ -983,7 +983,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ---
 
-- [ ] 25. Requirements Reviewer Conversion
+- [x] 25. Requirements Reviewer Conversion
 
   **What to do**:
   - Create test file (TDD red)
@@ -1016,7 +1016,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ---
 
-- [ ] 26. Performance Reviewer Conversion
+- [x] 26. Performance Reviewer Conversion
 
   **What to do**:
   - Create test file (TDD red)
@@ -1049,7 +1049,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ---
 
-- [ ] 27. Dependencies Reviewer Conversion
+- [x] 27. Dependencies Reviewer Conversion
 
   **What to do**:
   - Create test file (TDD red)
@@ -1082,7 +1082,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ---
 
-- [ ] 28. Changelog Reviewer Conversion
+- [x] 28. Changelog Reviewer Conversion
 
   **What to do**:
   - Create test file (TDD red)
