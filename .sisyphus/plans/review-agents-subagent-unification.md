@@ -201,7 +201,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ### Wave 0: Test Infrastructure
 
-- [ ] 1. Create shared test fixtures in `tests/conftest.py`
+- [x] 1. Create shared test fixtures in `tests/conftest.py`
 
   **What to do**:
   - Create `tests/conftest.py` with shared pytest fixtures
@@ -260,7 +260,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ---
 
-- [ ] 2. Create mock phase responses helper
+- [x] 2. Create mock phase responses helper
 
   **What to do**:
   - Add `mock_phase_responses` fixture to `tests/conftest.py`
@@ -308,7 +308,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ### Wave 1: Base Classes
 
-- [ ] 3. Create BaseDelegationSkill abstract class
+- [x] 3. Create BaseDelegationSkill abstract class
 
   **What to do**:
   - Create `iron_rook/review/skills/base_delegation.py`
@@ -367,7 +367,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ---
 
-- [ ] 4. Create BaseDynamicSubagent abstract class
+- [x] 4. Create BaseDynamicSubagent abstract class
 
   **What to do**:
   - Create `iron_rook/review/subagents/base_subagent.py`
