@@ -849,7 +849,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ---
 
-- [ ] 15-17. Telemetry Reviewer Conversion
+- [x] 15-17. Telemetry Reviewer Conversion
 
   **What to do** (3 subtasks):
   - 15: Create `tests/unit/review/agents/test_telemetry_fsm.py` (TDD red)
@@ -882,7 +882,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ---
 
-- [ ] 18-20. Linting Reviewer Conversion
+- [x] 18-20. Linting Reviewer Conversion
 
   **What to do** (3 subtasks):
   - 18: Create `tests/unit/review/agents/test_linting_fsm.py` (TDD red)
@@ -915,7 +915,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ---
 
-- [ ] 21-23. UnitTests Reviewer Conversion
+- [x] 21-23. UnitTests Reviewer Conversion
 
   **What to do** (3 subtasks):
   - 21: Create `tests/unit/review/agents/test_unit_tests_fsm.py` (TDD red)
