@@ -428,7 +428,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ---
 
-- [ ] 5. Create domain subagent template
+- [x] 5. Create domain subagent template
 
   **What to do**:
   - Create `iron_rook/review/subagents/TEMPLATE_SUBAGENT.md`
@@ -474,7 +474,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ---
 
-- [ ] 6. Create delegation skill template
+- [x] 6. Create delegation skill template
 
   **What to do**:
   - Create `iron_rook/review/skills/TEMPLATE_SKILL.md`

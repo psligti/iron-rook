@@ -156,3 +156,87 @@ class MyDelegationSkill(BaseDelegationSkill):
     def build_subagent_request(self, todo: dict, context: ReviewContext) -> dict:
         return {"todo_id": todo["id"], "title": todo["title"], ...}
 ```
+
+
+## Task 6: Delegation Skill Template (2026-02-16)
+
+### Implementation
+- Created `iron_rook/review/skills/TEMPLATE_SKILL.md`
+- Markdown documentation file (not Python code)
+- Template uses placeholder variables: `{DOMAIN}`, `{DOMAIN_LOWER}`
+
+### Template Contents
+1. **Quick Start** - Minimal class skeleton
+2. **Required Methods** - Full signatures and implementations:
+   - `__init__()`: Initialize with phase_outputs reference
+   - `get_subagent_class()`: Return the subagent class
+   - `build_subagent_request()`: Build request dict from todo
+   - `get_system_prompt()`: Return delegation instructions
+   - `review()`: Main orchestration method
+3. **Integration with Parent Reviewer** - Data flow diagram and usage example
+4. **Complete Example** - Full "PerformanceDelegationSkill" implementation
+5. **Checklist** - Verification list for new delegation skills
+
+### Key Design Patterns Documented
+- Parent reviewer passes `phase_outputs["plan"]` to skill constructor
+- Skill extracts todos from plan output: `plan_output.get("data", {}).get("todos", [])`
+- LLM generates `subagent_requests` array from todos
+- `execute_subagents_concurrently()` handles parallel execution
+- Result aggregation into `ReviewOutput`
+
+### Template Placeholder Variables
+- `{DOMAIN}`: PascalCase domain name (e.g., "Performance", "Security")
+- `{DOMAIN_LOWER}`: lowercase domain name (e.g., "performance", "security")
+
+### File Location
+- Templates are markdown files in `iron_rook/review/skills/`
+- Actual skill implementations are `.py` files in same directory
+- Subagent implementations go in `iron_rook/review/subagents/`
+
+
+## Task 5: Domain Subagent Template (2026-02-16)
+
+### Implementation
+- Created `iron_rook/review/subagents/TEMPLATE_SUBAGENT.md`
+- Markdown documentation file with code templates and examples
+- ~25KB comprehensive template covering all aspects of domain subagent creation
+
+### Template Contents
+1. **Overview** - FSM loop structure and key characteristics
+2. **FSM Loop Structure** - Phase transitions table
+3. **Stop Conditions** - Max iterations, goal met, stagnation, diminishing returns
+4. **Required Method Signatures** (10 methods):
+   - `__init__()`: Initialize with task dict
+   - `get_domain_tools()`: Return list of tool names
+   - `get_domain_prompt()`: Return domain-specific instructions
+   - `get_system_prompt()`: Return full system prompt
+   - `_run_intake_phase()`: Capture intent from task
+   - `_run_plan_phase()`: Plan tool usage
+   - `_run_act_phase()`: Execute tools, collect evidence
+   - `_run_synthesize_phase()`: Analyze and decide next step
+   - `_build_review_output()`: Build final ReviewOutput
+   - `_build_error_output()`: Build error ReviewOutput
+5. **Code Template** - Full Python class with placeholder variables
+6. **Example Configuration** - Performance subagent example
+7. **Phase Prompt Guidelines** - Key points for each phase prompt
+8. **Testing Checklist** - Verification list for new subagents
+9. **Common Pitfalls** - Issues to avoid
+
+### Key Design Patterns Documented
+- Inheritance from `BaseDynamicSubagent`
+- FSM phases: INTAKE → PLAN → ACT → SYNTHESIZE → (PLAN or DONE)
+- Evidence must include file:line: references
+- BIAS TOWARD DONE prevents infinite loops
+- Findings deduplicated by title
+
+### Template Placeholder Variables
+- `{DOMAIN}`: PascalCase domain name (e.g., "Performance")
+- `{DOMAIN_LOWER}`: lowercase domain name (e.g., "performance")
+- `{DOMAIN_CLASS}`: Class name suffix (e.g., "Performance")
+- `{DOMAIN_UPPER}`: Uppercase for constants (e.g., "PERF")
+- `{DOMAIN_SPECIFIC_GUIDANCE}`: Custom domain analysis instructions
+
+### File Location
+- Templates are markdown files in `iron_rook/review/subagents/`
+- Base class is `base_subagent.py`
+- Full implementation reference: `security_subagent_dynamic.py`
