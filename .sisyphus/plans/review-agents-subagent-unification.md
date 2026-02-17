@@ -687,7 +687,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ---
 
-- [ ] 10. Convert DocumentationReviewer to FSM
+- [x] 10. Convert DocumentationReviewer to FSM
 
   **What to do**:
   - Modify `iron_rook/review/agents/documentation.py`
