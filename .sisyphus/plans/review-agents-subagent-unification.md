@@ -579,7 +579,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ---
 
-- [ ] 8. Create DocumentationDelegationSkill
+- [x] 8. Create DocumentationDelegationSkill
 
   **What to do**:
   - Create `iron_rook/review/skills/documentation_delegation.py`
@@ -629,7 +629,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ---
 
-- [ ] 9. Create DocumentationSubagent
+- [x] 9. Create DocumentationSubagent
 
   **What to do**:
   - Create `iron_rook/review/subagents/documentation_subagent.py`

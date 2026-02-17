@@ -283,3 +283,73 @@ class MyDelegationSkill(BaseDelegationSkill):
 - Uses shared fixtures from `conftest.py`
 - Uses `@pytest.mark.asyncio` for async tests
 - Uses `@patch` for mocking `SimpleReviewAgentRunner`
+
+
+## Task 8: DocumentationDelegationSkill (2026-02-16)
+
+### Implementation
+- Created `iron_rook/review/skills/documentation_delegation.py`
+- Inherits from `BaseDelegationSkill`
+- Implements all required abstract methods
+
+### Class Structure
+```
+DocumentationDelegationSkill(BaseDelegationSkill)
+├── get_agent_name() -> "documentation_delegation"
+├── get_subagent_class() -> DocumentationSubagent (Task 9)
+├── build_subagent_request(todo, context) -> Dict
+├── get_system_prompt() -> str
+├── review(context) -> ReviewOutput
+└── Helper Methods
+    ├── _build_delegate_message(context) -> str
+    ├── _parse_response(response_text) -> Dict
+    ├── _build_review_output(context, results) -> ReviewOutput
+    ├── _build_empty_review_output(context) -> ReviewOutput
+    └── _build_error_review_output(context, error) -> ReviewOutput
+```
+
+### Request Structure (build_subagent_request)
+```python
+{
+    "todo_id": todo.get("id"),
+    "title": todo.get("title"),
+    "scope": todo.get("scope", {"paths": context.changed_files}),
+    "doc_category": todo.get("category", "general"),
+    "acceptance_criteria": todo.get("criteria", []),
+}
+```
+
+### Documentation Categories
+- docstrings: Public function/class documentation
+- readme: README and usage documentation
+- config_docs: Configuration and environment variable documentation
+- examples: Code examples and tutorials
+- api_docs: API reference documentation
+
+### Key Patterns
+- Uses `execute_subagents_concurrently()` from base class for parallel execution
+- `owner="docs"` for all documentation findings (matches Finding.owner Literal constraint)
+- Severity mapping: critical/blocking → block, warning → needs_changes, else → approve
+- Empty todos → approve decision
+- Import of `DocumentationSubagent` is lazy (inside method) to allow creation in Task 9
+
+### Expected Import Error
+- Line 109: `from iron_rook.review.subagents.documentation_subagent import DocumentationSubagent`
+- This import will fail until Task 9 creates the DocumentationSubagent
+- Task explicitly states this is acceptable
+
+## Task 9: DocumentationSubagent Implementation
+
+### Completed: 2026-02-16
+
+**File Created**: `iron_rook/review/subagents/documentation_subagent.py`
+
+**Key Implementation Details**:
+- Inherits from `BaseDynamicSubagent`
+- Uses separate `_runlog` attribute (type `RunLog`) instead of overriding base class `_thinking_log` (type `List[Any]`)
+- Domain tools: `["grep", "read", "file", "python"]`
+- `Finding.owner` must be `"docs"` (not `"documentation"`) per `Literal["dev", "docs", "devops", "security"]` constraint
+- Uses `ast.iter_child_nodes()` instead of `ast.walk()` for docstring extraction to avoid type issues with `ast.get_docstring()`
+- Type hint `ast.Module` for the tree parameter in `_extract_docstring_info()`
+
+**Pattern**: Follow `security_subagent_dynamic.py` as reference implementation for FSM-based subagents.
