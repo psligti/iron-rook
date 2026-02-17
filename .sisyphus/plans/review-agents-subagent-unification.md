@@ -1266,7 +1266,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ### Wave FINAL: Verification
 
-- [ ] F1. Full test suite run
+- [x] F1. Full test suite run
 
   **What to do**:
   - Run complete test suite
@@ -1291,7 +1291,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ---
 
-- [ ] F2. Integration smoke test
+- [x] F2. Integration smoke test
 
   **What to do**:
   - Run a simple PR review end-to-end
@@ -1316,7 +1316,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ---
 
-- [ ] F3. Registry verification
+- [x] F3. Registry verification
 
   **What to do**:
   - Verify all 11 reviewers are registered as core
@@ -1341,7 +1341,7 @@ Max Concurrent: 12 (Waves 3 & 4)
 
 ---
 
-- [ ] F4. CLI verification
+- [x] F4. CLI verification
 
   **What to do**:
   - Verify CLI works with new architecture
