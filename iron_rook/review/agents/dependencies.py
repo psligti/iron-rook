@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import List
-from iron_rook.fsm.state import AgentState
+from iron_rook.review.contracts import AgentState
 
 from iron_rook.review.base import BaseReviewerAgent, ReviewContext
 from iron_rook.review.contracts import (

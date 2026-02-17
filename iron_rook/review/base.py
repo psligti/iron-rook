@@ -7,7 +7,7 @@ from pathlib import Path
 import pydantic as pd
 
 from dawn_kestrel.core.result import Result, Ok, Err, Pass
-from iron_rook.fsm.state import AgentState
+from iron_rook.review.contracts import AgentState
 from iron_rook.review.contracts import ReviewOutput
 from iron_rook.review.verifier import FindingsVerifier
 

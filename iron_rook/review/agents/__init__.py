@@ -11,7 +11,7 @@ from iron_rook.review.agents.requirements import RequirementsReviewer
 from iron_rook.review.agents.performance import PerformanceReliabilityReviewer
 from iron_rook.review.agents.dependencies import DependencyLicenseReviewer
 from iron_rook.review.agents.changelog import ReleaseChangelogReviewer
-from iron_rook.fsm.state import AgentState
+from iron_rook.review.contracts import AgentState
 
 __all__ = [
     "ArchitectureReviewer",

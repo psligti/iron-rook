@@ -563,7 +563,7 @@ Critical Path: Task 1 → Task 2 → Task 3 → Task 5 → Task 8
 
 ---
 
-- [ ] 8. Delete iron_rook/fsm/ module
+- [x] 8. Delete iron_rook/fsm/ module
 
   **What to do**:
   - Verify no remaining imports of `iron_rook.fsm.loop_fsm` or `iron_rook.fsm.loop_state`
