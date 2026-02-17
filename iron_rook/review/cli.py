@@ -240,6 +240,18 @@ def setup_logging(verbose: bool = False) -> None:
     if settings.debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore.connection").setLevel(logging.WARNING)
+    logging.getLogger("httpcore.http11").setLevel(logging.WARNING)
+    logging.getLogger("httpcore._backends").setLevel(logging.WARNING)
+    logging.getLogger("httpcore._async").setLevel(logging.WARNING)
+    logging.getLogger("dawn_kestrel").setLevel(logging.WARNING)
+    logging.getLogger("dawn_kestrel.core").setLevel(logging.WARNING)
+    logging.getLogger("dawn_kestrel.llm").setLevel(logging.WARNING)
+    logging.getLogger("dawn_kestrel.core.harness").setLevel(logging.WARNING)
+    logging.getLogger("dawn_kestrel.core.plugin_discovery").setLevel(logging.WARNING)
+
 
 def get_subagents(include_optional: bool = False) -> list[BaseReviewerAgent]:
     """Get list of subagents based on optional flag.
@@ -344,12 +356,6 @@ def format_terminal_error(agent_name: str, error_msg: str) -> None:
     help="Include optional review subagents",
 )
 @click.option(
-    "--timeout",
-    type=int,
-    default=300,
-    help="Agent timeout in seconds (default: 300)",
-)
-@click.option(
     "--verbose",
     "-v",
     is_flag=True,
@@ -362,7 +368,6 @@ def review(
     head_ref: str,
     output: Literal["json", "markdown", "terminal"],
     include_optional: bool,
-    timeout: int,
     verbose: bool,
 ) -> None:
     """Run PR review on a git repository.
@@ -410,7 +415,6 @@ def review(
             base_ref=base_ref,
             head_ref=head_ref,
             include_optional=include_optional,
-            timeout_seconds=timeout,
         )
 
         console.print(f"[cyan]Starting PR review...[/cyan]")

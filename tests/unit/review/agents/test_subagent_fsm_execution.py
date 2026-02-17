@@ -3,11 +3,10 @@
 Tests verify that each security subagent (AuthSecuritySubagent, InjectionScannerSubagent,
 SecretScannerSubagent, DependencyAuditSubagent) properly:
 - Inherits from BaseSubagent
-- Has _fsm (LoopFSM) attribute
 - Implements required methods (get_agent_name, get_system_prompt, get_relevant_file_patterns, get_allowed_tools)
-- FSM starts in INTAKE state
-- FSM state transitions through full cycle
 - review() method returns ReviewOutput
+
+Note: Subagents no longer use LoopFSM directly - they use SimpleReviewAgentRunner.
 """
 
 import pytest
@@ -22,11 +21,10 @@ from iron_rook.review.subagents.security_subagents import (
 )
 from iron_rook.review.base import ReviewContext
 from iron_rook.review.contracts import ReviewOutput
-from iron_rook.fsm.loop_state import LoopState
 
 
 class TestAuthSecuritySubagent:
-    """Test AuthSecuritySubagent FSM initialization and execution."""
+    """Test AuthSecuritySubagent initialization and execution."""
 
     def test_auth_security_subagent_inherits_from_base_subagent(self):
         """Verify AuthSecuritySubagent inherits from BaseSubagent."""
@@ -34,14 +32,10 @@ class TestAuthSecuritySubagent:
         assert isinstance(agent, BaseSubagent)
 
     def test_auth_security_subagent_has_fsm_attribute(self):
-        """Verify AuthSecuritySubagent has _fsm attribute."""
+        """Verify AuthSecuritySubagent has _fsm attribute (now None)."""
         agent = AuthSecuritySubagent()
         assert hasattr(agent, "_fsm")
-
-    def test_auth_security_subagent_fsm_starts_in_intake_state(self):
-        """Verify FSM starts in INTAKE state."""
-        agent = AuthSecuritySubagent()
-        assert agent._fsm.current_state == LoopState.INTAKE
+        assert agent._fsm is None
 
     def test_auth_security_subagent_implements_get_agent_name(self):
         """Verify get_agent_name() method exists and returns correct value."""
@@ -124,10 +118,6 @@ class TestAuthSecuritySubagent:
             repo_root="/test",
         )
 
-        # Verify initial state
-        initial_state = agent._fsm.current_state
-        assert initial_state == LoopState.INTAKE
-
         # Execute review
         output = await agent.review(context)
 
@@ -136,7 +126,7 @@ class TestAuthSecuritySubagent:
 
 
 class TestInjectionScannerSubagent:
-    """Test InjectionScannerSubagent FSM initialization and execution."""
+    """Test InjectionScannerSubagent initialization and execution."""
 
     def test_injection_scanner_subagent_inherits_from_base_subagent(self):
         """Verify InjectionScannerSubagent inherits from BaseSubagent."""
@@ -144,14 +134,10 @@ class TestInjectionScannerSubagent:
         assert isinstance(agent, BaseSubagent)
 
     def test_injection_scanner_subagent_has_fsm_attribute(self):
-        """Verify InjectionScannerSubagent has _fsm attribute."""
+        """Verify InjectionScannerSubagent has _fsm attribute (now None)."""
         agent = InjectionScannerSubagent()
         assert hasattr(agent, "_fsm")
-
-    def test_injection_scanner_subagent_fsm_starts_in_intake_state(self):
-        """Verify FSM starts in INTAKE state."""
-        agent = InjectionScannerSubagent()
-        assert agent._fsm.current_state == LoopState.INTAKE
+        assert agent._fsm is None
 
     def test_injection_scanner_subagent_implements_get_agent_name(self):
         """Verify get_agent_name() method exists and returns correct value."""
@@ -234,10 +220,6 @@ class TestInjectionScannerSubagent:
             repo_root="/test",
         )
 
-        # Verify initial state
-        initial_state = agent._fsm.current_state
-        assert initial_state == LoopState.INTAKE
-
         # Execute review
         output = await agent.review(context)
 
@@ -254,14 +236,10 @@ class TestSecretScannerSubagent:
         assert isinstance(agent, BaseSubagent)
 
     def test_secret_scanner_subagent_has_fsm_attribute(self):
-        """Verify SecretScannerSubagent has _fsm attribute."""
+        """Verify SecretScannerSubagent has _fsm attribute (now None)."""
         agent = SecretScannerSubagent()
         assert hasattr(agent, "_fsm")
-
-    def test_secret_scanner_subagent_fsm_starts_in_intake_state(self):
-        """Verify FSM starts in INTAKE state."""
-        agent = SecretScannerSubagent()
-        assert agent._fsm.current_state == LoopState.INTAKE
+        assert agent._fsm is None
 
     def test_secret_scanner_subagent_implements_get_agent_name(self):
         """Verify get_agent_name() method exists and returns correct value."""
@@ -344,10 +322,6 @@ class TestSecretScannerSubagent:
             repo_root="/test",
         )
 
-        # Verify initial state
-        initial_state = agent._fsm.current_state
-        assert initial_state == LoopState.INTAKE
-
         # Execute review
         output = await agent.review(context)
 
@@ -364,14 +338,10 @@ class TestDependencyAuditSubagent:
         assert isinstance(agent, BaseSubagent)
 
     def test_dependency_audit_subagent_has_fsm_attribute(self):
-        """Verify DependencyAuditSubagent has _fsm attribute."""
+        """Verify DependencyAuditSubagent has _fsm attribute (now None)."""
         agent = DependencyAuditSubagent()
         assert hasattr(agent, "_fsm")
-
-    def test_dependency_audit_subagent_fsm_starts_in_intake_state(self):
-        """Verify FSM starts in INTAKE state."""
-        agent = DependencyAuditSubagent()
-        assert agent._fsm.current_state == LoopState.INTAKE
+        assert agent._fsm is None
 
     def test_dependency_audit_subagent_implements_get_agent_name(self):
         """Verify get_agent_name() method exists and returns correct value."""
@@ -453,10 +423,6 @@ class TestDependencyAuditSubagent:
             diff="test diff",
             repo_root="/test",
         )
-
-        # Verify initial state
-        initial_state = agent._fsm.current_state
-        assert initial_state == LoopState.INTAKE
 
         # Execute review
         output = await agent.review(context)

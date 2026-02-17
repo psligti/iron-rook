@@ -20,7 +20,7 @@ classifiers = [
 ]
 
 dependencies = [
-  "dawn-kestrel @ file:///Users/parkersligting/develop/pt/worktrees/harness-agent-rework",
+  "dawn-kestrel @ file:///Users/parkersligting/develop/pt/dawn-kestrel",
   "click>=8.0",
   "rich>=13.0",
   "pydantic>=2.0",

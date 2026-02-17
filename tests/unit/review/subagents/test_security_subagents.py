@@ -1,10 +1,12 @@
-"""Tests for security subagents with FSM loop execution.
+"""Tests for security subagents.
 
 Tests cover BaseSubagent and all 4 specialized subagents:
 - AuthSecuritySubagent
 - InjectionScannerSubagent
 - SecretScannerSubagent
 - DependencyAuditSubagent
+
+Note: Subagents now use SimpleReviewAgentRunner directly instead of LoopFSM.
 """
 
 import pytest
@@ -20,42 +22,41 @@ from iron_rook.review.subagents.security_subagents import (
 )
 from iron_rook.review.base import ReviewContext
 from iron_rook.review.contracts import ReviewOutput, Scope, MergeGate, Finding
-from iron_rook.fsm.loop_state import LoopState
-from iron_rook.fsm.loop_fsm import LoopFSM
 
 
 class TestBaseSubagentInitialization:
     """Test BaseSubagent class initialization through concrete subclasses."""
 
-    def test_auth_subagent_initializes_with_fsm(self):
-        """Verify AuthSecuritySubagent initializes with LoopFSM."""
+    def test_auth_subagent_initializes_without_fsm(self):
+        """Verify AuthSecuritySubagent initializes (FSM is now optional/None)."""
         subagent = AuthSecuritySubagent()
         assert hasattr(subagent, "_fsm")
-        assert isinstance(subagent._fsm, LoopFSM)
-        assert subagent._fsm.current_state == LoopState.INTAKE
+        # _fsm is now None since we don't use LoopFSM
+        assert subagent._fsm is None
 
     def test_auth_subagent_accepts_max_retries(self):
         """Verify AuthSecuritySubagent accepts max_retries parameter."""
         subagent = AuthSecuritySubagent(max_retries=5)
-        assert subagent._fsm.max_retries == 5
+        # max_retries is now stored in base class but not in FSM
+        assert subagent._fsm is None
 
-    def test_injection_subagent_initializes_with_fsm(self):
-        """Verify InjectionScannerSubagent initializes with LoopFSM."""
+    def test_injection_subagent_initializes_without_fsm(self):
+        """Verify InjectionScannerSubagent initializes (FSM is now optional/None)."""
         subagent = InjectionScannerSubagent()
         assert hasattr(subagent, "_fsm")
-        assert isinstance(subagent._fsm, LoopFSM)
+        assert subagent._fsm is None
 
-    def test_secret_subagent_initializes_with_fsm(self):
-        """Verify SecretScannerSubagent initializes with LoopFSM."""
+    def test_secret_subagent_initializes_without_fsm(self):
+        """Verify SecretScannerSubagent initializes (FSM is now optional/None)."""
         subagent = SecretScannerSubagent()
         assert hasattr(subagent, "_fsm")
-        assert isinstance(subagent._fsm, LoopFSM)
+        assert subagent._fsm is None
 
-    def test_dependency_subagent_initializes_with_fsm(self):
-        """Verify DependencyAuditSubagent initializes with LoopFSM."""
+    def test_dependency_subagent_initializes_without_fsm(self):
+        """Verify DependencyAuditSubagent initializes (FSM is now optional/None)."""
         subagent = DependencyAuditSubagent()
         assert hasattr(subagent, "_fsm")
-        assert isinstance(subagent._fsm, LoopFSM)
+        assert subagent._fsm is None
 
 
 class TestAuthSecuritySubagent:
@@ -224,8 +225,8 @@ class TestDependencyAuditSubagent:
         assert "safety" in tools
 
 
-class TestSubagentFSMExecution:
-    """Test FSM execution for all subagent types."""
+class TestSubagentReviewExecution:
+    """Test review execution for all subagent types."""
 
     @pytest.fixture
     def mock_review_context(self):
@@ -239,11 +240,11 @@ class TestSubagentFSMExecution:
         )
 
     @pytest.mark.asyncio
-    async def test_auth_subagent_fsm_execution(self, mock_review_context):
-        """Verify AuthSecuritySubagent executes FSM loop."""
+    async def test_auth_subagent_review_execution(self, mock_review_context):
+        """Verify AuthSecuritySubagent executes review."""
         subagent = AuthSecuritySubagent()
 
-        # Mock the parent _execute_review_with_runner to avoid actual LLM calls
+        # Mock the _execute_review_with_runner to avoid actual LLM calls
         with patch.object(
             BaseSubagent, "_execute_review_with_runner", new_callable=AsyncMock
         ) as mock_runner:
@@ -268,13 +269,11 @@ class TestSubagentFSMExecution:
             # Execute review
             result = await subagent.review(mock_review_context)
 
-            # Verify FSM was used (current state should be set during execution)
-            assert subagent._fsm.current_state == LoopState.INTAKE
             assert isinstance(result, ReviewOutput)
 
     @pytest.mark.asyncio
-    async def test_injection_subagent_fsm_execution(self, mock_review_context):
-        """Verify InjectionScannerSubagent executes FSM loop."""
+    async def test_injection_subagent_review_execution(self, mock_review_context):
+        """Verify InjectionScannerSubagent executes review."""
         subagent = InjectionScannerSubagent()
 
         with patch.object(
@@ -300,12 +299,11 @@ class TestSubagentFSMExecution:
 
             result = await subagent.review(mock_review_context)
 
-            assert subagent._fsm.current_state == LoopState.INTAKE
             assert isinstance(result, ReviewOutput)
 
     @pytest.mark.asyncio
-    async def test_secret_subagent_fsm_execution(self, mock_review_context):
-        """Verify SecretScannerSubagent executes FSM loop."""
+    async def test_secret_subagent_review_execution(self, mock_review_context):
+        """Verify SecretScannerSubagent executes review."""
         subagent = SecretScannerSubagent()
 
         with patch.object(
@@ -331,12 +329,11 @@ class TestSubagentFSMExecution:
 
             result = await subagent.review(mock_review_context)
 
-            assert subagent._fsm.current_state == LoopState.INTAKE
             assert isinstance(result, ReviewOutput)
 
     @pytest.mark.asyncio
-    async def test_dependency_subagent_fsm_execution(self, mock_review_context):
-        """Verify DependencyAuditSubagent executes FSM loop."""
+    async def test_dependency_subagent_review_execution(self, mock_review_context):
+        """Verify DependencyAuditSubagent executes review."""
         subagent = DependencyAuditSubagent()
 
         with patch.object(
@@ -362,7 +359,6 @@ class TestSubagentFSMExecution:
 
             result = await subagent.review(mock_review_context)
 
-            assert subagent._fsm.current_state == LoopState.INTAKE
             assert isinstance(result, ReviewOutput)
 
 
@@ -381,43 +377,8 @@ class TestSubagentErrorHandling:
         )
 
     @pytest.mark.asyncio
-    async def test_subagent_handles_fsm_failure_gracefully(self, mock_review_context):
-        """Verify subagent handles FSM failure and returns ReviewOutput."""
-        subagent = AuthSecuritySubagent()
-
-        # Mock run_loop to raise exception
-        with patch.object(subagent._fsm, "run_loop") as mock_run_loop:
-            mock_run_loop.side_effect = RuntimeError("FSM failed")
-
-            # Mock _execute_review_with_runner to return valid output
-            with patch.object(
-                BaseSubagent, "_execute_review_with_runner", new_callable=AsyncMock
-            ) as mock_runner:
-                mock_output = ReviewOutput(
-                    agent="auth_security",
-                    summary="Test summary",
-                    severity="merge",
-                    scope=Scope(
-                        relevant_files=[],
-                        ignored_files=[],
-                        reasoning="Test",
-                    ),
-                    merge_gate=MergeGate(
-                        decision="approve",
-                        must_fix=[],
-                        should_fix=[],
-                        notes_for_coding_agent=[],
-                    ),
-                )
-                mock_runner.return_value = mock_output
-
-                # Review should not crash even if FSM fails
-                result = await subagent.review(mock_review_context)
-                assert isinstance(result, ReviewOutput)
-
-    @pytest.mark.asyncio
     async def test_subagent_handles_llm_error_gracefully(self, mock_review_context):
-        """Verify subagent handles LLM errors and returns ReviewOutput."""
+        """Verify subagent handles LLM errors and raises appropriately."""
         subagent = InjectionScannerSubagent()
 
         # Mock _execute_review_with_runner to raise exception

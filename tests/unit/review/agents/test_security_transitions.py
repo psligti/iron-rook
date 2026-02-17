@@ -19,33 +19,30 @@ class TestTransitionLogging:
         reviewer = SecurityReviewer()
         assert reviewer._phase_logger is not None
 
-    def test_log_transition_called_on_intake_to_plan_todos(self):
-        """Verify log_transition() is called for intake -> plan_todos transition."""
+    def test_log_transition_called_on_intake_to_plan(self):
         reviewer = SecurityReviewer()
         reviewer._phase_logger = Mock()
 
-        reviewer._current_security_phase = "intake"
-        reviewer._transition_to_phase("plan_todos")
+        reviewer._current_phase = "intake"
+        reviewer._transition_to_phase("plan")
 
-        reviewer._phase_logger.log_transition.assert_called_once_with("intake", "plan_todos")
+        reviewer._phase_logger.log_transition.assert_called_once_with("intake", "plan")
 
     @patch.object(SecurityReviewer, "_execute_llm")
     def test_log_transition_called_for_all_valid_transitions(self, mock_execute_llm):
-        """Verify log_transition() is called for all 6 valid FSM transitions."""
         valid_transitions = [
-            ("intake", "plan_todos"),
-            ("plan_todos", "delegate"),
-            ("delegate", "collect"),
-            ("collect", "consolidate"),
-            ("consolidate", "evaluate"),
-            ("evaluate", "done"),
+            ("intake", "plan"),
+            ("plan", "act"),
+            ("act", "synthesize"),
+            ("synthesize", "check"),
+            ("check", "done"),
         ]
 
         reviewer = SecurityReviewer()
         reviewer._phase_logger = Mock()
 
         for from_state, to_state in valid_transitions:
-            reviewer._current_security_phase = from_state
+            reviewer._current_phase = from_state
             reviewer._transition_to_phase(to_state)
             reviewer._phase_logger.log_transition.assert_called_with(from_state, to_state)
             reviewer._phase_logger.reset_mock()
@@ -63,50 +60,45 @@ class TestTransitionLogging:
             original_log(from_state, to_state)
 
         reviewer._phase_logger.log_transition = side_effect_log
-        reviewer._current_security_phase = "intake"
-        reviewer._transition_to_phase("plan_todos")
+        reviewer._current_phase = "intake"
+        reviewer._transition_to_phase("plan")
 
         assert call_order[0][0] == "log"
         assert call_order[0][1] == "intake"
-        assert call_order[0][2] == "plan_todos"
-        assert reviewer._current_security_phase == "plan_todos"
+        assert call_order[0][2] == "plan"
+        assert reviewer._current_security_phase == "plan"
 
     def test_invalid_transition_raises_value_error_without_logging(self):
         """Verify invalid transitions raise ValueError and don't call log_transition()."""
         reviewer = SecurityReviewer()
         reviewer._phase_logger = Mock()
-        reviewer._current_security_phase = "intake"
+        reviewer._current_phase = "intake"
 
         with pytest.raises(ValueError) as exc_info:
-            reviewer._transition_to_phase("collect")
+            reviewer._transition_to_phase("synthesize")
 
         assert "Invalid transition" in str(exc_info.value)
-        assert "Valid transitions: ['plan_todos']" in str(exc_info.value)
+        assert "Valid transitions: {'plan'}" in str(exc_info.value)
         reviewer._phase_logger.log_transition.assert_not_called()
 
     @patch.object(SecurityReviewer, "_execute_llm")
-    def test_delegate_to_consolidate_transition_logged(self, mock_execute_llm):
-        """Verify log_transition() is called for delegate -> consolidate (multiple allowed)."""
+    def test_act_to_synthesize_transition_logged(self, mock_execute_llm):
+        """Verify log_transition() is called for act -> synthesize (multiple allowed)."""
         reviewer = SecurityReviewer()
-        reviewer._current_security_phase = "delegate"
+        reviewer._current_phase = "act"
         reviewer._phase_logger = Mock()
 
-        reviewer._transition_to_phase("consolidate")
-        reviewer._phase_logger.log_transition.assert_called_once_with("delegate", "consolidate")
+        reviewer._transition_to_phase("synthesize")
+        reviewer._phase_logger.log_transition.assert_called_once_with("act", "synthesize")
 
     @patch.object(SecurityReviewer, "_execute_llm")
-    def test_all_delegate_alternative_transitions_logged(self, mock_execute_llm):
-        """Verify all alternative transitions from delegate are logged correctly."""
-        alternatives = ["collect", "consolidate", "evaluate", "done"]
-
+    def test_all_act_alternative_transitions_logged(self, mock_execute_llm):
         reviewer = SecurityReviewer()
         reviewer._phase_logger = Mock()
 
-        for to_state in alternatives:
-            reviewer._current_security_phase = "delegate"
-            reviewer._phase_logger.reset_mock()
-            reviewer._transition_to_phase(to_state)
-            reviewer._phase_logger.log_transition.assert_called_once_with("delegate", to_state)
+        reviewer._current_phase = "act"
+        reviewer._transition_to_phase("synthesize")
+        reviewer._phase_logger.log_transition.assert_called_once_with("act", "synthesize")
 
     @patch.object(SecurityReviewer, "_execute_llm")
     def test_phase_logger_is_security_phase_logger_instance(self, mock_execute_llm):
@@ -118,15 +110,13 @@ class TestTransitionLogging:
 
     @patch.object(SecurityReviewer, "_execute_llm")
     def test_transition_states_match_fsm_transitions_dict(self, mock_execute_llm):
-        """Verify logged transitions match the SECURITY_FSM_TRANSITIONS dictionary."""
-        from iron_rook.review.agents.security import SECURITY_FSM_TRANSITIONS
-
+        # Use SecurityReviewer's actual VALID_TRANSITIONS, not the generic WORKFLOW_FSM_TRANSITIONS
         reviewer = SecurityReviewer()
         reviewer._phase_logger = Mock()
 
-        for from_state, allowed_to_states in SECURITY_FSM_TRANSITIONS.items():
+        for from_state, allowed_to_states in SecurityReviewer.VALID_TRANSITIONS.items():
             for to_state in allowed_to_states:
-                reviewer._current_security_phase = from_state
+                reviewer._current_phase = from_state
                 reviewer._phase_logger.reset_mock()
                 reviewer._transition_to_phase(to_state)
                 reviewer._phase_logger.log_transition.assert_called_once_with(from_state, to_state)

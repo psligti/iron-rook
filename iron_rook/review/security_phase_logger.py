@@ -13,6 +13,30 @@ from rich.console import Console
 from rich.text import Text
 
 from iron_rook.review.contracts import ThinkingFrame, ThinkingStep
+from iron_rook.review.llm_audit_logger import (
+    get_trace_id,
+    get_span_id,
+    TraceContext,
+    SpanContext,
+)
+
+
+class SecurityPhaseFormatter(logging.Formatter):
+    """Formatter that includes trace/span IDs without duplicating log level."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        trace_id = get_trace_id()
+        span_id = get_span_id()
+
+        record.trace_id = trace_id if trace_id else "-"
+        record.span_id = span_id if span_id else "-"
+
+        if trace_id and span_id:
+            record.trace_info = f"[trace={trace_id} span={span_id}] "
+        else:
+            record.trace_info = ""
+
+        return super().format(record)
 
 
 class SecurityPhaseLogger:
@@ -20,19 +44,12 @@ class SecurityPhaseLogger:
 
     Provides methods for logging thinking output during phase execution and
     FSM state transitions with phase-specific colors for easy visual tracking.
-
-    Example:
-        >>> logger = SecurityPhaseLogger()
-        >>> logger.log_thinking("INTAKE", "Analyzing PR changes")
-        [INTAKE] Analyzing PR changes
-        >>> logger.log_transition("intake", "plan_todos")
-        [TRANSITION] intake → plan_todos
     """
 
     PHASE_COLORS: dict[str, str] = {
         "INTAKE": "bold cyan",
         "PLAN_TODOS": "bold green",
-        "DELEGATE": "bold yellow",
+        "ACT": "bold yellow",
         "COLLECT": "bold magenta",
         "CONSOLIDATE": "bold blue",
         "EVALUATE": "bold red",
@@ -43,28 +60,25 @@ class SecurityPhaseLogger:
     }
 
     def __init__(self, enable_color: bool = True) -> None:
-        """Initialize the phase logger.
-
-        Args:
-            enable_color: Enable colored console output using Rich. Default: True.
-        """
         self._enable_color = enable_color
         self._console = Console(force_terminal=enable_color)
-        self._logger = logging.getLogger("security.thinking")
+        self._logger = logging.getLogger("security.phase")
         self._logger.setLevel(logging.DEBUG)
+        self._logger.propagate = False
+
+        if not self._logger.handlers:
+            import sys
+
+            handler = logging.StreamHandler(sys.stdout)
+            handler.setLevel(logging.DEBUG)
+            formatter = SecurityPhaseFormatter(
+                fmt="%(asctime)s %(levelname)s %(trace_info)s%(message)s",
+                datefmt="%H:%M:%S",
+            )
+            handler.setFormatter(formatter)
+            self._logger.addHandler(handler)
 
     def log_thinking(self, phase: str, message: str) -> None:
-        """Log thinking output for a specific phase with phase-specific formatting.
-
-        Args:
-            phase: The phase name (e.g., "INTAKE", "PLAN_TODOS"). Used for color selection.
-            message: The thinking message to log.
-
-        Example:
-            >>> logger = SecurityPhaseLogger()
-            >>> logger.log_thinking("INTAKE", "Analyzing PR changes for security surfaces")
-            [INTAKE] Analyzing PR changes for security surfaces
-        """
         phase_key = phase.upper()
         color = self.PHASE_COLORS.get(phase_key, "white")
 
@@ -72,23 +86,10 @@ class SecurityPhaseLogger:
             phase_text = Text(f"[{phase}] ", style=color)
             message_text = Text(message)
             self._console.print(phase_text + message_text)
-
-            self._logger.debug("[%s] %s", phase, message)
         else:
-            self._logger.info("[%s] %s", phase, message)
+            self._logger.debug("[%s] %s", phase, message)
 
     def log_transition(self, from_state: str, to_state: str) -> None:
-        """Log FSM state transition with clear visual formatting.
-
-        Args:
-            from_state: The source state (e.g., "intake", "plan_todos").
-            to_state: The target state (e.g., "plan_todos", "delegate").
-
-        Example:
-            >>> logger = SecurityPhaseLogger()
-            >>> logger.log_transition("intake", "plan_todos")
-            [TRANSITION] intake → plan_todos
-        """
         if self._enable_color:
             arrow = Text(" → ", style="bold dim")
             from_text = Text(from_state, style="dim")
@@ -96,24 +97,10 @@ class SecurityPhaseLogger:
             label = Text("[TRANSITION] ", style=self.PHASE_COLORS["TRANSITION"])
 
             self._console.print(label + from_text + arrow + to_text)
-
-            self._logger.info("[TRANSITION] %s → %s", from_state, to_state)
         else:
             self._logger.info("[TRANSITION] %s → %s", from_state, to_state)
 
     def log_thinking_frame(self, frame: ThinkingFrame) -> None:
-        """Log a thinking frame with structured, styled output.
-
-        Args:
-            frame: ThinkingFrame containing state, goals, checks, risks, steps, and decision.
-
-        Example:
-            >>> from iron_rook.review.contracts import ThinkingFrame, ThinkingStep
-            >>> logger = SecurityPhaseLogger()
-            >>> step = ThinkingStep(kind="transition", why="test", confidence="high")
-            >>> frame = ThinkingFrame(state="test", steps=[step], decision="done")
-            >>> logger.log_thinking_frame(frame)
-        """
         if self._enable_color:
             phase_key = frame.state.upper()
             color = self.PHASE_COLORS.get(phase_key, "white")
@@ -162,16 +149,6 @@ class SecurityPhaseLogger:
 
             decision_text = Text(f"Decision: {frame.decision}", style="bold")
             self._console.print(decision_text)
-
-            self._logger.debug(
-                "[%s] ThinkingFrame: goals=%d, checks=%d, risks=%d, steps=%d, decision=%s",
-                frame.state,
-                len(frame.goals),
-                len(frame.checks),
-                len(frame.risks),
-                len(frame.steps),
-                frame.decision,
-            )
         else:
             self._logger.info(
                 "[%s] ThinkingFrame: goals=%d, checks=%d, risks=%d, steps=%d, decision=%s",
@@ -184,33 +161,8 @@ class SecurityPhaseLogger:
             )
 
     def get_phase_color(self, phase: str) -> str:
-        """Get the color style for a given phase.
-
-        Args:
-            phase: The phase name (e.g., "INTAKE", "PLAN_TODOS").
-
-        Returns:
-            The Rich color style string for the phase.
-
-        Example:
-            >>> logger = SecurityPhaseLogger()
-            >>> color = logger.get_phase_color("INTAKE")
-            >>> color
-            'bold cyan'
-        """
         phase_key = phase.upper()
         return self.PHASE_COLORS.get(phase_key, "white")
 
     def get_valid_phases(self) -> list[str]:
-        """Get list of valid phase names with their color styles.
-
-        Returns:
-            List of phase names recognized by the logger.
-
-        Example:
-            >>> logger = SecurityPhaseLogger()
-            >>> phases = logger.get_valid_phases()
-            >>> 'INTAKE' in phases
-            True
-        """
         return list(self.PHASE_COLORS.keys())

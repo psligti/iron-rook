@@ -32,7 +32,7 @@ class TestSecurityPhaseLoggerInitialization:
         expected_phases = [
             "INTAKE",
             "PLAN_TODOS",
-            "DELEGATE",
+            "ACT",
             "COLLECT",
             "CONSOLIDATE",
             "EVALUATE",
@@ -86,20 +86,19 @@ class TestLogTransition:
     def test_log_transition_valid_states(self, caplog):
         """Verify log_transition works with valid state names."""
         logger = SecurityPhaseLogger(enable_color=False)
-        logger.log_transition("intake", "plan_todos")
+        logger.log_transition("intake", "plan")
 
         assert any("[TRANSITION]" in record.message for record in caplog.records)
         assert any(
-            "intake" in record.message and "plan_todos" in record.message
-            for record in caplog.records
+            "intake" in record.message and "plan" in record.message for record in caplog.records
         )
 
     def test_log_transition_multiple_transitions(self, caplog):
         """Verify multiple transitions are logged correctly."""
         logger = SecurityPhaseLogger(enable_color=False)
-        logger.log_transition("intake", "plan_todos")
-        logger.log_transition("plan_todos", "delegate")
-        logger.log_transition("delegate", "collect")
+        logger.log_transition("intake", "plan")
+        logger.log_transition("plan", "act")
+        logger.log_transition("act", "synthesize")
 
         transitions = [r for r in caplog.records if "[TRANSITION]" in r.message]
         assert len(transitions) == 3
@@ -144,7 +143,7 @@ class TestPhaseColorMethods:
         expected_phases = [
             "INTAKE",
             "PLAN_TODOS",
-            "DELEGATE",
+            "ACT",
             "COLLECT",
             "CONSOLIDATE",
             "EVALUATE",

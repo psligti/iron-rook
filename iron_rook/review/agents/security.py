@@ -1,4 +1,4 @@
-"""Security Reviewer agent for checking security vulnerabilities with 6-phase FSM."""
+"""Security Reviewer agent for checking security vulnerabilities."""
 
 from __future__ import annotations
 from typing import Dict, Any, List, Optional
@@ -8,10 +8,9 @@ import asyncio
 import subprocess
 import os
 
-from iron_rook.fsm.loop_state import LoopState
-from iron_rook.fsm.loop_fsm import LoopFSM
 from iron_rook.review.base import BaseReviewerAgent, ReviewContext
 from iron_rook.review.security_phase_logger import SecurityPhaseLogger
+from iron_rook.review.security_context import load_security_context
 from iron_rook.review.contracts import (
     ReviewOutput,
     Scope,
@@ -29,22 +28,10 @@ from dawn_kestrel.core.harness import SimpleReviewAgentRunner
 logger = logging.getLogger(__name__)
 
 
-# Custom transitions for security FSM phases
-SECURITY_FSM_TRANSITIONS: Dict[str, List[str]] = {
-    "intake": ["plan_todos"],
-    "plan_todos": ["act"],
-    "act": ["collect", "consolidate", "evaluate", "done"],
-    "collect": ["consolidate"],
-    "consolidate": ["evaluate"],
-    "evaluate": ["done"],
-}
-
-
 class SecurityReviewer(BaseReviewerAgent):
-    """Reviewer agent specialized in security vulnerability analysis with 6-phase FSM.
+    """Reviewer agent specialized in security vulnerability analysis.
 
-    Implements INTAKE → PLAN_TODOS → ACT → COLLECT → CONSOLIDATE → EVALUATE → DONE
-    using LoopFSM pattern.
+    Implements INTAKE → PLAN → ACT → SYNTHESIZE → CHECK → DONE
 
     Checks for:
     - Secrets handling (API keys, passwords, tokens)
@@ -54,7 +41,15 @@ class SecurityReviewer(BaseReviewerAgent):
     - Unsafe code execution patterns
     """
 
-    # Override to use custom transitions
+    # Valid phase transitions for the security review FSM
+    VALID_TRANSITIONS: Dict[str, set[str]] = {
+        "intake": {"plan"},
+        "plan": {"act"},
+        "act": {"synthesize", "done"},
+        "synthesize": {"check"},
+        "check": {"done"},
+    }
+
     def __init__(
         self,
         verifier=None,
@@ -63,43 +58,27 @@ class SecurityReviewer(BaseReviewerAgent):
         phase_timeout_seconds: int | None = None,
         delegate_timeout_seconds: int = 600,
     ):
-        """Initialize security reviewer with FSM infrastructure.
+        """Initialize security reviewer.
 
         Args:
             verifier: Optional findings verifier instance.
             max_retries: Maximum retry attempts for failed operations.
             agent_runtime: Optional agent runtime for subagent execution.
-            phase_timeout_seconds: Timeout in seconds per FSM phase (default: None = no timeout).
-            delegate_timeout_seconds: Timeout for DELEGATE phase which runs subagents (default: 600s).
+            phase_timeout_seconds: Timeout in seconds per phase (default: None = no timeout).
+            delegate_timeout_seconds: Timeout for ACT phase which runs subagents (default: 600s).
         """
-        # Initialize base without calling super().__init__ to avoid duplicate LoopFSM
-        from iron_rook.review.verifier import FindingsVerifier, GrepFindingsVerifier
-        from iron_rook.fsm.state import AgentState
+        from iron_rook.review.verifier import GrepFindingsVerifier
 
         self._verifier = verifier or GrepFindingsVerifier()
-        # Use LoopFSM directly without mapping to AgentState
-        self._fsm = LoopFSM(max_retries=max_retries, agent_runtime=agent_runtime)
+        self._max_retries = max_retries
+        self._agent_runtime = agent_runtime
         self._phase_timeout_seconds = phase_timeout_seconds
         self._delegate_timeout_seconds = delegate_timeout_seconds
-        # Map security phase strings to LoopState for transitions
-        self._phase_to_loop_state: Dict[str, LoopState] = {
-            "intake": LoopState.INTAKE,
-            "planning": LoopState.PLAN,
-            "act": LoopState.ACT,
-            "synthesize": LoopState.SYNTHESIZE,
-            "check": LoopState.ACT,
-            "done": LoopState.DONE,
-        }
         self._phase_logger = SecurityPhaseLogger()
         self._phase_outputs: Dict[str, Any] = {}
-        self._current_security_phase: str = "intake"
+        self._current_phase: str = "intake"
         self._thinking_log = RunLog()
-
-    @property
-    def state(self):
-        """Get current security phase as string."""
-        # Return security phase name for compatibility
-        return self._current_security_phase
+        self._security_context: str = ""
 
     def get_agent_name(self) -> str:
         """Get agent identifier."""
@@ -110,140 +89,91 @@ class SecurityReviewer(BaseReviewerAgent):
         return True
 
     async def review(self, context: ReviewContext) -> ReviewOutput:
-        """Perform security review using 6-phase FSM.
+        """Perform security review."""
+        from iron_rook.review.llm_audit_logger import TraceContext
 
-        Args:
-            context: ReviewContext containing changed files, diff, and metadata
+        self._security_context = load_security_context(context.repo_root)
 
-        Returns:
-            ReviewOutput with findings, severity, and merge gate decision
+        with TraceContext():
+            return await self._run_review_fsm(context)
 
-        Raises:
-            ValueError: If API key is missing or invalid
-            TimeoutError: If LLM request times out
-            Exception: For other API-related errors
-        """
-        # Reset FSM for new review
-        self._fsm.reset()
+    async def _run_review_fsm(self, context: ReviewContext) -> ReviewOutput:
+        """Run the security review phases in sequence."""
         self._phase_outputs = {}
-        self._current_security_phase = "intake"
+        self._current_phase = "intake"
 
-        # Execute 7-phase FSM
-        while self._current_security_phase != "done":
-            try:
-                if self._current_security_phase == "intake":
-                    if self._phase_timeout_seconds is not None:
-                        output = await asyncio.wait_for(
-                            self._run_intake(context), timeout=self._phase_timeout_seconds
-                        )
-                    else:
-                        output = await self._run_intake(context)
-                    self._phase_outputs["intake"] = output
-                    next_phase = output.get("next_phase_request", "plan_todos")
-                    self._transition_to_phase(next_phase)
+        phase_handlers = {
+            "intake": self._run_intake,
+            "plan": self._run_plan,
+            "act": self._run_act,
+            "synthesize": self._run_synthesize,
+            "check": self._run_check,
+        }
 
-                elif self._current_security_phase == "plan_todos":
-                    if self._phase_timeout_seconds is not None:
-                        output = await asyncio.wait_for(
-                            self._run_plan_todos(context), timeout=self._phase_timeout_seconds
-                        )
-                    else:
-                        output = await self._run_plan_todos(context)
-                    self._phase_outputs["plan_todos"] = output
-                    next_phase = output.get("next_phase_request", "act")
-                    self._transition_to_phase(next_phase)
-
-                elif self._current_security_phase == "act":
-                    if self._phase_timeout_seconds is not None:
-                        output = await asyncio.wait_for(
-                            self._run_act(context), timeout=self._phase_timeout_seconds
-                        )
-                    else:
-                        output = await self._run_act(context)
-                    self._phase_outputs["act"] = output
-                    next_phase = output.get("next_phase_request", "collect")
-                    self._transition_to_phase(next_phase)
-
-                elif self._current_security_phase == "collect":
-                    if self._phase_timeout_seconds is not None:
-                        output = await asyncio.wait_for(
-                            self._run_collect(context), timeout=self._phase_timeout_seconds
-                        )
-                    else:
-                        output = await self._run_collect(context)
-                    self._phase_outputs["collect"] = output
-                    next_phase = output.get("next_phase_request", "consolidate")
-                    self._transition_to_phase(next_phase)
-
-                elif self._current_security_phase == "consolidate":
-                    if self._phase_timeout_seconds is not None:
-                        output = await asyncio.wait_for(
-                            self._run_consolidate(context), timeout=self._phase_timeout_seconds
-                        )
-                    else:
-                        output = await self._run_consolidate(context)
-                    self._phase_outputs["consolidate"] = output
-                    next_phase = output.get("next_phase_request", "evaluate")
-                    self._transition_to_phase(next_phase)
-
-                elif self._current_security_phase == "evaluate":
-                    if self._phase_timeout_seconds is not None:
-                        output = await asyncio.wait_for(
-                            self._run_evaluate(context), timeout=self._phase_timeout_seconds
-                        )
-                    else:
-                        output = await self._run_evaluate(context)
-                    self._phase_outputs["evaluate"] = output
-                    next_phase = output.get("next_phase_request", "done")
-                    self._transition_to_phase(next_phase)
-
-                else:
-                    raise ValueError(f"Unknown phase: {self._current_security_phase}")
-
-            except asyncio.TimeoutError:
-                phase = self._current_security_phase
-                timeout_str = (
-                    f"{self._phase_timeout_seconds}s" if self._phase_timeout_seconds else "timeout"
-                )
-                logger.error(
-                    f"[{self.__class__.__name__}] Phase {phase} timed out after {timeout_str}"
-                )
+        while self._current_phase != "done":
+            handler = phase_handlers.get(self._current_phase)
+            if handler is None:
+                logger.error(f"No handler for phase: {self._current_phase}")
                 return self._build_error_review_output(
-                    context, f"Phase {phase} timed out after {timeout_str}"
+                    context, f"No handler for phase: {self._current_phase}"
+                )
+
+            try:
+                if self._phase_timeout_seconds:
+                    output = await asyncio.wait_for(
+                        handler(context), timeout=self._phase_timeout_seconds
+                    )
+                else:
+                    output = await handler(context)
+            except asyncio.TimeoutError:
+                logger.error(f"Phase '{self._current_phase}' timed out")
+                return self._build_error_review_output(
+                    context, f"Phase '{self._current_phase}' timed out"
                 )
             except Exception as e:
-                logger.error(
-                    f"[{self.__class__.__name__}] Phase {self._current_security_phase} failed: {e}"
-                )
-                # Build partial report with error
+                logger.exception(f"Phase '{self._current_phase}' failed: {e}")
                 return self._build_error_review_output(context, str(e))
 
-        # Build final ReviewOutput from evaluate phase output
-        evaluate_output = self._phase_outputs.get("evaluate", {})
-        return self._build_review_output_from_evaluate(evaluate_output, context)
+            if output is None:
+                output = {}
+
+            self._phase_outputs[self._current_phase] = output
+            next_phase = output.get("next_phase_request")
+
+            if next_phase is None:
+                valid = self.VALID_TRANSITIONS.get(self._current_phase, set())
+                next_phase = next(iter(valid)) if valid else "done"
+
+            valid_transitions = self.VALID_TRANSITIONS.get(self._current_phase, set())
+            if next_phase not in valid_transitions and next_phase != "done":
+                logger.error(
+                    f"Invalid transition: {self._current_phase} -> {next_phase}. "
+                    f"Valid: {valid_transitions}"
+                )
+                return self._build_error_review_output(
+                    context, f"Invalid transition: {self._current_phase} -> {next_phase}"
+                )
+
+            self._phase_logger.log_transition(self._current_phase, next_phase)
+            self._current_phase = next_phase
+
+        check_output = self._phase_outputs.get("check", {})
+        return self._build_review_output_from_check(check_output, context)
+
+    @property
+    def _current_security_phase(self) -> str:
+        return self._current_phase
 
     def _transition_to_phase(self, next_phase: str) -> None:
-        """Transition to next security phase with logging.
-
-        Args:
-            next_phase: Target phase name (e.g., "plan_todos", "act")
-
-        Raises:
-            ValueError: If transition is invalid
-        """
-        # Validate transition against custom FSM_TRANSITIONS
-        valid_transitions = SECURITY_FSM_TRANSITIONS.get(self._current_security_phase, [])
+        valid_transitions = self.VALID_TRANSITIONS.get(self._current_phase, set())
         if next_phase not in valid_transitions:
             raise ValueError(
-                f"Invalid transition: {self._current_security_phase} -> {next_phase}. "
+                f"Invalid transition: {self._current_phase} -> {next_phase}. "
                 f"Valid transitions: {valid_transitions}"
             )
 
-        # Log the transition
-        self._phase_logger.log_transition(self._current_security_phase, next_phase)
-
-        # Update current phase
-        self._current_security_phase = next_phase
+        self._phase_logger.log_transition(self._current_phase, next_phase)
+        self._current_phase = next_phase
 
     async def _run_intake(self, context: ReviewContext) -> Dict[str, Any]:
         """Run INTAKE phase: analyze PR changes and identify security surfaces.
@@ -297,7 +227,7 @@ class SecurityReviewer(BaseReviewerAgent):
                     kind="transition",
                     why=thinking,
                     evidence=[],
-                    next="plan_todos",
+                    next="plan",
                     confidence="medium",
                 )
             )
@@ -308,7 +238,7 @@ class SecurityReviewer(BaseReviewerAgent):
             checks=checks if checks else ["Identify security-sensitive code areas"],
             risks=risks if risks else data.get("risk_hypotheses", []),
             steps=steps,
-            decision=output.get("next_phase_request", "plan_todos"),
+            decision=output.get("next_phase_request", "plan"),
         )
 
         self._phase_logger.log_thinking_frame(frame)
@@ -316,8 +246,8 @@ class SecurityReviewer(BaseReviewerAgent):
 
         return output
 
-    async def _run_plan_todos(self, context: ReviewContext) -> Dict[str, Any]:
-        """Run PLAN_TODOS phase: create structured security TODOs.
+    async def _run_plan(self, context: ReviewContext) -> Dict[str, Any]:
+        """Run PLAN phase: create structured security TODOs.
 
         Args:
             context: ReviewContext containing changed files, diff, and metadata
@@ -326,14 +256,14 @@ class SecurityReviewer(BaseReviewerAgent):
             Phase output with next_phase_request
         """
         self._phase_logger.log_thinking(
-            "PLAN_TODOS", "Creating structured security TODOs with priorities"
+            "PLAN", "Creating structured security TODOs with priorities"
         )
 
         # Build phase-specific prompt
-        system_prompt = self._get_phase_prompt("plan_todos")
+        system_prompt = self._get_phase_prompt("plan")
 
         # Build user message with context
-        user_message = self._build_plan_todos_message(context)
+        user_message = self._build_plan_message(context)
 
         # Execute LLM call
         response_text = await self._execute_llm(system_prompt, user_message)
@@ -341,7 +271,7 @@ class SecurityReviewer(BaseReviewerAgent):
         # Extract and log LLM thinking from response
         thinking = self._extract_thinking_from_response(response_text)
         if thinking:
-            self._phase_logger.log_thinking("PLAN_TODOS", thinking)
+            self._phase_logger.log_thinking("PLAN", thinking)
             logger.info(f"[{self.__class__.__name__}] thinking: {thinking}")
         else:
             logger.info(
@@ -349,7 +279,7 @@ class SecurityReviewer(BaseReviewerAgent):
             )
 
         # Parse JSON response
-        output = self._parse_phase_response(response_text, "plan_todos")
+        output = self._parse_phase_response(response_text, "plan")
 
         # Create ThinkingFrame with extracted data
         goals = [
@@ -386,7 +316,7 @@ class SecurityReviewer(BaseReviewerAgent):
 
         # Create ThinkingFrame
         frame = ThinkingFrame(
-            state="plan_todos",
+            state="plan",
             goals=goals,
             checks=checks,
             risks=risks,
@@ -402,11 +332,13 @@ class SecurityReviewer(BaseReviewerAgent):
 
         # Log thinking output
         self._phase_logger.log_thinking(
-            "PLAN_TODOS",
-            f"PLAN_TODOS complete, {len(self._phase_outputs.get('intake', {}).get('data', {}).get('risk_hypotheses', []))} TODOs planned",
+            "PLAN",
+            f"PLAN complete, {len(self._phase_outputs.get('intake', {}).get('data', {}).get('risk_hypotheses', []))} TODOs planned",
         )
 
         return output
+
+    _run_plan = _run_plan
 
     async def _run_act(self, context: ReviewContext) -> Dict[str, Any]:
         """Run ACT phase: delegate todos to subagents using DelegateTodoSkill.
@@ -421,7 +353,7 @@ class SecurityReviewer(BaseReviewerAgent):
 
         skill = DelegateTodoSkill(
             verifier=self._verifier,
-            max_retries=self._fsm.max_retries,
+            max_retries=self._max_retries,
             agent_runtime=None,
             phase_outputs=self._phase_outputs,
         )
@@ -448,7 +380,7 @@ class SecurityReviewer(BaseReviewerAgent):
                 "subagent_results": subagent_results,
                 "findings": [f.model_dump() for f in findings],
             },
-            "next_phase_request": "collect",
+            "next_phase_request": "synthesize",
         }
 
         frame = ThinkingFrame(
@@ -461,11 +393,11 @@ class SecurityReviewer(BaseReviewerAgent):
                     kind="delegate",
                     why="Using DelegateTodoSkill for delegation",
                     evidence=[f"Findings collected: {len(findings)}"],
-                    next="collect",
+                    next="synthesize",
                     confidence="medium",
                 )
             ],
-            decision="collect",
+            decision="synthesize",
         )
 
         self._phase_logger.log_thinking_frame(frame)
@@ -720,7 +652,7 @@ class SecurityReviewer(BaseReviewerAgent):
         self,
         context: ReviewContext,
         tool_results: Dict[str, Any],
-        plan_todos_output: Dict[str, Any],
+        plan_output: Dict[str, Any],
         delegate_output: Dict[str, Any],
     ) -> str:
         """Build user message for ACT phase.
@@ -728,16 +660,16 @@ class SecurityReviewer(BaseReviewerAgent):
         Args:
             context: ReviewContext containing changed files
             tool_results: Results from tool execution
-            plan_todos_output: Output from plan_todos phase
+            plan_output: Output from plan phase
             delegate_output: Output from delegate phase
 
         Returns:
             Formatted user message string
         """
         parts = [
-            "## PLAN_TODOS Output",
+            "## PLAN Output",
             "",
-            json.dumps(plan_todos_output, indent=2),
+            json.dumps(plan_output, indent=2),
             "",
             "## DELEGATE Output",
             "",
@@ -761,19 +693,18 @@ class SecurityReviewer(BaseReviewerAgent):
         return "\n".join(parts)
 
     async def _run_synthesize(self, context: ReviewContext) -> Dict[str, Any]:
-        """Run SYNTHESIZE phase: merge and deduplicate findings from ACT phase.
-
-        Args:
-            context: ReviewContext containing changed files, diff, and metadata
-
-        Returns:
-            Phase output with next_phase_request
-        """
         self._phase_logger.log_thinking(
-            "SYNTHESIZE", "Merging and de-duplicating security findings from ACT"
+            "SYNTHESIZE", "Validating, merging and de-duplicating security findings from ACT"
         )
 
-        # Build phase-specific prompt
+        act_output = self._phase_outputs.get("act", {})
+        is_early_exit = act_output.get("next_phase_request") == "done"
+
+        if is_early_exit:
+            self._phase_logger.log_thinking(
+                "SYNTHESIZE", "Early-exit detected (act returned done), running minimal synthesis"
+            )
+
         system_prompt = self._get_phase_prompt("synthesize")
 
         # Build user message with context
@@ -792,20 +723,26 @@ class SecurityReviewer(BaseReviewerAgent):
                 f"[{self.__class__.__name__}] LLM response (no thinking): {response_text[:500]}..."
             )
 
-        # Parse JSON response
         output = self._parse_phase_response(response_text, "synthesize")
 
         goals = [
-            "Merge all findings from ACT phase into structured evidence list",
+            "Validate subagent results and findings (ensure each references todo_id with evidence)",
+            "Mark TODO statuses as done/blocked and explain issues",
+            "Merge all findings into structured evidence list",
             "De-duplicate findings by severity and finding_id",
             "Synthesize summary of issues found",
         ]
         checks = [
-            "Verify all findings have required fields and valid structure",
+            "Verify all subagent responses are received and valid",
+            "Validate findings structure and required fields",
+            "Ensure TODO status updates are consistent",
             "Ensure de-duplication correctly identifies duplicate findings",
-            "Validate summary accurately reflects consolidated findings",
+            "Validate summary accurately reflects findings",
         ]
         risks = [
+            "Malformed subagent responses",
+            "Incomplete or inconsistent findings",
+            "Missing status updates for TODOs",
             "Inaccurate merging of conflicting findings",
             "Missing findings due to aggressive de-duplication",
             "Incomplete summary of security issues",
@@ -838,9 +775,15 @@ class SecurityReviewer(BaseReviewerAgent):
         self._thinking_log.add(frame)
 
         # Log thinking output
-        self._phase_logger.log_thinking(
-            "SYNTHESIZE", "SYNTHESIZE complete, findings merged and de-duplicated"
-        )
+        if is_early_exit:
+            self._phase_logger.log_thinking(
+                "SYNTHESIZE",
+                "SYNTHESIZE complete (minimal), no significant findings to consolidate",
+            )
+        else:
+            self._phase_logger.log_thinking(
+                "SYNTHESIZE", "SYNTHESIZE complete, findings validated, merged and de-duplicated"
+            )
 
         return output
 
@@ -934,170 +877,6 @@ class SecurityReviewer(BaseReviewerAgent):
 
         # Add ThinkingFrame to thinking log
         self._thinking_log.add(frame)
-
-        return output
-
-    async def _run_collect(self, context: ReviewContext) -> Dict[str, Any]:
-        """Run COLLECT phase: validate and aggregate subagent results.
-
-        Args:
-            context: ReviewContext containing changed files, diff, and metadata
-
-        Returns:
-            Phase output with next_phase_request
-        """
-        self._phase_logger.log_thinking("COLLECT", "Validating and aggregating subagent results")
-
-        # Build phase-specific prompt
-        system_prompt = self._get_phase_prompt("collect")
-
-        # Build user message with context
-        user_message = self._build_collect_message(context)
-
-        # Execute LLM call
-        response_text = await self._execute_llm(system_prompt, user_message)
-
-        # Extract and log LLM thinking from response
-        thinking = self._extract_thinking_from_response(response_text)
-        if thinking:
-            self._phase_logger.log_thinking("COLLECT", thinking)
-            logger.info(f"[{self.__class__.__name__}] thinking: {thinking}")
-        else:
-            logger.info(
-                f"[{self.__class__.__name__}] LLM response (no thinking): {response_text[:500]}..."
-            )
-
-        # Parse JSON response
-        output = self._parse_phase_response(response_text, "collect")
-
-        goals = [
-            "Validate subagent results and findings",
-            "Mark TODO statuses based on completion",
-            "Ensure findings quality and completeness",
-        ]
-        checks = [
-            "Verify all subagent responses are received and valid",
-            "Validate findings structure and required fields",
-            "Ensure TODO status updates are consistent",
-        ]
-        risks = [
-            "Malformed subagent responses",
-            "Incomplete or inconsistent findings",
-            "Missing status updates for TODOs",
-        ]
-
-        steps = []
-        if thinking:
-            steps.append(
-                ThinkingStep(
-                    kind="transition",
-                    why=thinking,
-                    evidence=["LLM response analysis"],
-                    next=output.get("next_phase_request", "consolidate"),
-                    confidence="medium",
-                )
-            )
-
-        decision = output.get("next_phase_request", "consolidate")
-
-        frame = ThinkingFrame(
-            state="collect",
-            goals=goals,
-            checks=checks,
-            risks=risks,
-            steps=steps,
-            decision=decision,
-        )
-
-        self._phase_logger.log_thinking_frame(frame)
-        self._thinking_log.add(frame)
-
-        # Log thinking output
-        self._phase_logger.log_thinking("COLLECT", "COLLECT complete, all TODO statuses marked")
-
-        return output
-
-    async def _run_consolidate(self, context: ReviewContext) -> Dict[str, Any]:
-        """Run CONSOLIDATE phase: merge and deduplicate findings.
-
-        Args:
-            context: ReviewContext containing changed files, diff, and metadata
-
-        Returns:
-            Phase output with next_phase_request
-        """
-        self._phase_logger.log_thinking(
-            "CONSOLIDATE", "Merging and de-duplicating security findings"
-        )
-
-        # Build phase-specific prompt
-        system_prompt = self._get_phase_prompt("consolidate")
-
-        # Build user message with context
-        user_message = self._build_consolidate_message(context)
-
-        # Execute LLM call
-        response_text = await self._execute_llm(system_prompt, user_message)
-
-        # Extract and log LLM thinking from response
-        thinking = self._extract_thinking_from_response(response_text)
-        if thinking:
-            self._phase_logger.log_thinking("CONSOLIDATE", thinking)
-            logger.info(f"[{self.__class__.__name__}] thinking: {thinking}")
-        else:
-            logger.info(
-                f"[{self.__class__.__name__}] LLM response (no thinking): {response_text[:500]}..."
-            )
-
-        # Parse JSON response
-        output = self._parse_phase_response(response_text, "consolidate")
-
-        goals = [
-            "Merge all subagent findings into structured evidence list",
-            "De-duplicate findings by severity and finding_id",
-            "Synthesize summary of issues found",
-        ]
-        checks = [
-            "Verify all findings have required fields and valid structure",
-            "Ensure de-duplication correctly identifies duplicate findings",
-            "Validate summary accurately reflects consolidated findings",
-        ]
-        risks = [
-            "Inaccurate merging of conflicting findings",
-            "Missing findings due to aggressive de-duplication",
-            "Incomplete summary of security issues",
-        ]
-
-        steps = []
-        if thinking:
-            steps.append(
-                ThinkingStep(
-                    kind="gate",
-                    why=thinking,
-                    evidence=["LLM response analysis"],
-                    next=output.get("next_phase_request", "evaluate"),
-                    confidence="medium",
-                )
-            )
-
-        decision = output.get("next_phase_request", "evaluate")
-
-        frame = ThinkingFrame(
-            state="consolidate",
-            goals=goals,
-            checks=checks,
-            risks=risks,
-            steps=steps,
-            decision=decision,
-        )
-
-        self._phase_logger.log_thinking_frame(frame)
-        self._thinking_log.add(frame)
-
-        # Log thinking output
-        self._phase_logger.log_thinking(
-            "CONSOLIDATE", "CONSOLIDATE complete, findings merged and de-duplicated"
-        )
 
         return output
 
@@ -1195,17 +974,16 @@ class SecurityReviewer(BaseReviewerAgent):
         return output
 
     def _get_phase_prompt(self, phase: str) -> str:
-        """Get phase-specific system prompt.
+        context_section = (
+            f"""
 
-        Args:
-            phase: Phase name (e.g., "INTAKE", "PLAN_TODOS")
+{self._security_context}
+"""
+            if self._security_context
+            else ""
+        )
 
-        Returns:
-            System prompt string for the phase
-        """
-        # Read phase-specific prompts from security_review_agent.md
-        # For now, return a basic prompt structure
-        base_prompt = f"""You are the Security Review Agent.
+        return f"""You are the Security Review Agent.
 
 You are in the {phase} phase of the 5-phase security review FSM.
 
@@ -1214,18 +992,18 @@ You are in the {phase} phase of the 5-phase security review FSM.
 Your agent name is "security_fsm".
 
 {self._get_phase_specific_instructions(phase)}
-"""
-        return base_prompt
+{context_section}"""
 
     def _get_phase_specific_instructions(self, phase: str) -> str:
         """Get phase-specific instructions from security_review_agent.md.
 
         Args:
-            phase: Phase name (e.g., "INTAKE", "PLAN_TODOS")
+            phase: Phase name (e.g., "INTAKE", "PLAN")
 
         Returns:
             Phase-specific instructions string
         """
+        instructions_upper_key = phase.upper()
         instructions = {
             "INTAKE": """INTAKE Phase:
 Task:
@@ -1247,10 +1025,10 @@ Output JSON format:
     "risk_hypotheses": ["..."],
     "questions": ["..."]
   },
-  "next_phase_request": "planning"
+  "next_phase_request": "plan"
 }
 """,
-            "PLANNING": """PLANNING Phase:
+            "PLAN": """PLAN Phase:
 Task:
 1. Create structured security TODOs (3-12) with:
    - Priority (high/medium/low)
@@ -1262,33 +1040,9 @@ Task:
 
 Output JSON format:
 {
-  "phase": "planning",
+  "phase": "plan",
   "data": {
     "todos": [...],
-    "tools_considered": [...],
-    "tools_chosen": [...],
-    "why": "..."
-  },
-  "next_phase_request": "act"
-}
-""",
-            "PLAN_TODOS": """PLAN_TODOS Phase:
-Task:
-1. Create structured security TODOs (3-12) with:
-   - Priority (high/medium/low)
-   - Scope (paths, symbols, related_paths)
-   - Risk category (authn_authz, injection, crypto, data_exposure, etc.)
-   - Acceptance criteria
-   - Evidence requirements
-2. Map each TODO to an appropriate subagent_type or "self" if trivial.
-3. Specify tool choices considered and chosen.
-
-Output JSON format:
-{
-  "phase": "plan_todos",
-  "data": {
-    "todos": [...],
-    "delegation_plan": {...},
     "tools_considered": [...],
     "tools_chosen": [...],
     "why": "..."
@@ -1326,28 +1080,58 @@ Output JSON format:
       "Missing configuration file analysis"
     ]
   },
-  "next_phase_request": "collect"
+  "next_phase_request": "synthesize"
 }
 """,
             "SYNTHESIZE": """SYNTHESIZE Phase:
 Task:
-1. Merge all findings from ACT phase into structured evidence list.
-2. De-duplicate findings by severity and finding_id.
-3. Synthesize summary of issues found.
+1. Validate each subagent result references a todo_id and contains evidence.
+2. Mark TODO status as done/blocked and explain any issues.
+3. Merge all subagent findings from ACT output into a structured findings list.
+4. De-duplicate findings by severity and finding_id/title.
+5. Synthesize summary of issues found.
+
+CRITICAL: Your output MUST include the "findings" field with the merged findings from subagents.
+Do NOT skip this - the findings are essential for the CHECK phase.
+
+Early-Exit Handling:
+If the ACT phase returned next_phase_request="done" (no significant security issues),
+you can run minimal synthesis with empty findings and proceed to CHECK.
 
 Output JSON format:
 {
   "phase": "synthesize",
   "data": {
-    "findings": [...],
+    "todo_status": [
+      {"todo_id": "...", "status": "done|blocked", "notes": "..."}
+    ],
+    "findings": {
+      "critical": [],
+      "high": [...list of high severity findings...],
+      "medium": [...list of medium severity findings...],
+      "low": []
+    },
     "gates": {
+      "all_todos_resolved": true,
       "evidence_present": true,
       "findings_categorized": true,
       "confidence_set": true
     },
+    "summary": "Brief summary of consolidated findings",
+    "issues_with_results": [],
     "missing_information": []
   },
   "next_phase_request": "check"
+}
+
+Each finding in the findings object should have:
+{
+  "id": "finding-N",
+  "title": "Finding title",
+  "severity": "high|medium|low|critical",
+  "description": "Description of the issue",
+  "evidence": "Evidence from code/tool output",
+  "recommendation": "How to fix this"
 }
 """,
             "CHECK": """CHECK Phase:
@@ -1390,52 +1174,16 @@ Output JSON format:
   "next_phase_request": "done"
 }
 """,
-            "COLLECT": """COLLECT Phase:
-Task:
-1. Validate each result references a todo_id and contains evidence.
-2. Mark TODO status as done/blocked and explain.
-3. Identify any issues with results.
-
-CRITICAL: After validation, you MUST proceed to the CONSOLIDATE phase. Do NOT transition to any other phase.
-
-Output JSON format:
-{
-  "phase": "collect",
-  "data": {
-    "todo_status": [...],
-    "issues_with_results": []
-  },
-  "next_phase_request": "consolidate"
-}
-
-REMEMBER: The next phase MUST be "consolidate" - this is the only valid transition from COLLECT.
-""",
-            "CONSOLIDATE": """CONSOLIDATE Phase:
-Task:
-1. Merge all subagent findings into structured evidence list.
-2. De-duplicate findings by severity and finding_id.
-3. Synthesize summary of issues found.
-
-Output JSON format:
-{
-  "phase": "consolidate",
-  "data": {
-    "gates": {
-      "all_todos_resolved": true,
-      "evidence_present": true,
-      "findings_categorized": true,
-      "confidence_set": true
-    },
-    "missing_information": []
-  },
-  "next_phase_request": "evaluate"
-}
-""",
             "EVALUATE": """EVALUATE Phase:
 Task:
-1. Assess findings for severity distribution and blockers.
-2. Generate final risk assessment (critical/high/medium/low).
-3. Generate final security review report.
+1. CRITICAL: Use the findings from the SYNTHESIZE Output in your input - DO NOT ignore them.
+2. Assess findings for severity distribution and blockers.
+3. Generate final risk assessment (critical/high/medium/low).
+4. Generate final security review report.
+
+CRITICAL: Your input contains "## SYNTHESIZE Output" which has a "findings" object with
+consolidated findings by severity (critical, high, medium, low). You MUST use these findings
+in your final report. Do NOT say "No security findings" if the SYNTHESIZE Output has findings.
 
 Severity Classification Guidelines:
 - CRITICAL: Active vulnerability in changed code that can be exploited NOW (e.g., SQL injection, auth bypass, exposed secrets)
@@ -1450,20 +1198,20 @@ Output JSON format:
   "phase": "evaluate",
   "data": {
     "findings": {
-      "critical": [],
-      "high": [...],
-      "medium": [],
-      "low": []
+      "critical": [...copy from SYNTHESIZE or empty array...],
+      "high": [...copy findings from SYNTHESIZE here...],
+      "medium": [...copy findings from SYNTHESIZE here...],
+      "low": [...copy findings from SYNTHESIZE here...]
     },
     "risk_assessment": {
-      "overall": "high",
-      "rationale": "...",
+      "overall": "high|medium|low",
+      "rationale": "Based on the N findings from SYNTHESIZE...",
       "areas_touched": [...]
     },
     "evidence_index": [...],
     "actions": {
-      "required": [...],
-      "suggested": []
+      "required": [...list critical/high findings to fix...],
+      "suggested": [...list medium/low findings to consider...]
     },
     "confidence": 0.9,
     "missing_information": []
@@ -1472,7 +1220,7 @@ Output JSON format:
 }
 """,
         }
-        return instructions.get(phase, "")
+        return instructions.get(instructions_upper_key, "")
 
     def _build_intake_message(self, context: ReviewContext) -> str:
         """Build user message for INTAKE phase.
@@ -1499,8 +1247,8 @@ Output JSON format:
         parts.append("```")
         return "\n".join(parts)
 
-    def _build_plan_todos_message(self, context: ReviewContext) -> str:
-        """Build user message for PLAN_TODOS phase."""
+    def _build_plan_message(self, context: ReviewContext) -> str:
+        """Build user message for PLAN phase."""
         intake_output = self._phase_outputs.get("intake", {}).get("data", {})
         parts = [
             "## INTAKE Output",
@@ -1516,11 +1264,11 @@ Output JSON format:
 
     def _build_delegate_message(self, context: ReviewContext) -> str:
         """Build user message for DELEGATE phase."""
-        plan_todos_output = self._phase_outputs.get("plan_todos", {}).get("data", {})
+        plan_output = self._phase_outputs.get("plan", {}).get("data", {})
         parts = [
-            "## PLAN_TODOS Output",
+            "## PLAN Output",
             "",
-            json.dumps(plan_todos_output, indent=2),
+            json.dumps(plan_output, indent=2),
             "",
             "## Current Phase Context",
             "",
@@ -1528,38 +1276,37 @@ Output JSON format:
         ]
         return "\n".join(parts)
 
-    def _build_collect_message(self, context: ReviewContext) -> str:
-        """Build user message for COLLECT phase."""
-        act_output = self._phase_outputs.get("act", {}).get("data", {})
-        plan_todos_output = self._phase_outputs.get("plan_todos", {}).get("data", {})
-        parts = [
-            "## ACT Output",
-            "",
-            json.dumps(act_output, indent=2),
-            "",
-            "## TODOs from PLAN_TODOS",
-            "",
-            json.dumps(plan_todos_output.get("todos", []), indent=2),
-        ]
-        return "\n".join(parts)
-
     def _build_synthesize_message(self, context: ReviewContext) -> str:
-        """Build user message for SYNTHESIZE phase."""
-        act_output = self._phase_outputs.get("act", {}).get("data", {})
-        planning_output = self._phase_outputs.get("planning", {}).get("data", {})
+        act_output = self._phase_outputs.get("act", {})
+        act_data = act_output.get("data", {})
+        plan_output = self._phase_outputs.get("plan", {}).get("data", {})
+
+        is_early_exit = act_output.get("next_phase_request") == "done"
+
         parts = [
-            "## PLANNING Output",
-            "",
-            json.dumps(planning_output, indent=2),
-            "",
             "## ACT Output",
             "",
-            json.dumps(act_output, indent=2),
+            json.dumps(act_data, indent=2) if act_data else "{}",
+            "",
+            "## TODOs from PLAN",
+            "",
+            json.dumps(plan_output.get("todos", []), indent=2),
         ]
+
+        if is_early_exit:
+            parts.extend(
+                [
+                    "",
+                    "## Early-Exit Note",
+                    "",
+                    "The ACT phase returned next_phase_request='done', indicating no significant security issues.",
+                    "Run minimal synthesis: validate outputs and proceed to CHECK with empty findings.",
+                ]
+            )
+
         return "\n".join(parts)
 
     def _build_check_message(self, context: ReviewContext) -> str:
-        """Build user message for CHECK phase."""
         synthesize_output = self._phase_outputs.get("synthesize", {}).get("data", {})
         parts = [
             "## SYNTHESIZE Output",
@@ -1568,23 +1315,17 @@ Output JSON format:
         ]
         return "\n".join(parts)
 
-    def _build_consolidate_message(self, context: ReviewContext) -> str:
-        """Build user message for CONSOLIDATE phase."""
-        collect_output = self._phase_outputs.get("collect", {}).get("data", {})
-        parts = [
-            "## COLLECT Output",
-            "",
-            json.dumps(collect_output, indent=2),
-        ]
-        return "\n".join(parts)
-
     def _build_evaluate_message(self, context: ReviewContext) -> str:
-        """Build user message for EVALUATE phase."""
-        consolidate_output = self._phase_outputs.get("consolidate", {}).get("data", {})
+        synthesize_output = self._phase_outputs.get("synthesize", {}).get("data", {})
+        act_output = self._phase_outputs.get("act", {}).get("data", {})
         parts = [
-            "## CONSOLIDATE Output",
+            "## SYNTHESIZE Output",
             "",
-            json.dumps(consolidate_output, indent=2),
+            json.dumps(synthesize_output, indent=2),
+            "",
+            "## ACT Output (Findings to Evaluate)",
+            "",
+            json.dumps(act_output, indent=2),
         ]
         return "\n".join(parts)
 
@@ -1603,16 +1344,46 @@ Output JSON format:
             TimeoutError: If LLM request times out
             Exception: For other API-related errors
         """
+        import time
         from dawn_kestrel.core.harness import SimpleReviewAgentRunner
+        from iron_rook.review.llm_audit_logger import LLMAuditLogger
+
+        llm_logger = LLMAuditLogger.get()
+        phase = self._current_security_phase or "unknown"
+
+        llm_logger.log_request(
+            agent_name=self.get_agent_name(),
+            phase=phase,
+            system_prompt=system_prompt,
+            user_message=user_message,
+        )
 
         runner = SimpleReviewAgentRunner(
             agent_name=self.get_agent_name(),
             allowed_tools=self.get_allowed_tools(),
         )
 
-        response_text = await runner.run_with_retry(system_prompt, user_message)
-        logger.info(f"[{self.__class__.__name__}] Got LLM response: {len(response_text)} chars")
-        return response_text
+        start_time = time.time()
+        try:
+            response_text = await runner.run_with_retry(system_prompt, user_message)
+            duration_ms = int((time.time() - start_time) * 1000)
+
+            llm_logger.log_response(
+                agent_name=self.get_agent_name(),
+                phase=phase,
+                response=response_text,
+                duration_ms=duration_ms,
+            )
+
+            logger.info(f"[{self.__class__.__name__}] Got LLM response: {len(response_text)} chars")
+            return response_text
+        except Exception as e:
+            llm_logger.log_error(
+                agent_name=self.get_agent_name(),
+                phase=phase,
+                error=e,
+            )
+            raise
 
     def _extract_thinking_from_response(self, response_text: str) -> str:
         """Extract thinking/reasoning from LLM response text.
@@ -1705,10 +1476,10 @@ Output JSON format:
             )
             raise ValueError(f"Failed to parse phase response: {e}") from e
 
-    def _build_review_output_from_evaluate(
-        self, evaluate_output: Dict[str, Any], context: ReviewContext
+    def _build_review_output_from_check(
+        self, check_output: Dict[str, Any], context: ReviewContext
     ) -> ReviewOutput:
-        data = evaluate_output.get("data", {})
+        data = check_output.get("data", {})
         risk_assessment = data.get("risk_assessment", {})
         confidence = data.get("confidence", 0.5)
 
@@ -1816,7 +1587,7 @@ Output JSON format:
         else:
             decision = "approve"
             must_fix = []
-            should_fix = [f.title for f in all_findings]
+            should_fix = []
 
         relevant_files = [
             file_path
@@ -1832,7 +1603,7 @@ Output JSON format:
             scope=Scope(
                 relevant_files=relevant_files,
                 ignored_files=[],
-                reasoning="Security review completed with 6-phase FSM analysis.",
+                reasoning="Security review completed.",
             ),
             findings=all_findings,
             merge_gate=MergeGate(

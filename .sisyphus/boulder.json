@@ -1,23 +1,11 @@
 {
-  "active_plan": "/Users/parkersligting/develop/pt/iron-rook/.sisyphus/plans/security-agent-fsm-implementation.md",
-  "started_at": "2026-02-11T16:41:08.484Z",
+  "active_plan": "/Users/parkersligting/develop/pt/iron-rook/.sisyphus/plans/security-agent-fsm-migration.md",
+  "started_at": "2026-02-16T05:41:16.232Z",
   "session_ids": [
-    "ses_3b2d16eb4fel212Pr4FYxvHjW",
-    "ses_3b24b7328ffeCG44jS7BV41u87"
+    "ses_39b085ebdffeV29FIaAxuGuUyW",
+    "ses_39889a855ffePMAi1nRSp24VMb",
+    "ses_3972cda2dffexfSczYHFu1nZOh"
   ],
-  "plan_name": "security-agent-fsm-implementation",
-  "tasks": [
-    {
-      "id": "1",
-      "content": "Update CLI with RichHandler for colored logging",
-      "status": "pending",
-      "priority": "medium"
-    },
-    {
-      "id": "2",
-      "content": "Update CLI with RichHandler for colored logging",
-      "status": "completed",
-      "priority": "medium"
-    }
-  ]
+  "plan_name": "security-agent-fsm-migration",
+  "agent": "atlas"
 }

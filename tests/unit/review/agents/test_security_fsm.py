@@ -1,13 +1,10 @@
-"""Tests for SecurityReviewer 6-phase FSM implementation.
-
-Tests FSM transitions, phase execution, SecurityPhaseLogger integration,
-and ReviewOutput generation.
-"""
+"""Tests for SecurityReviewer FSM implementation."""
 
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 
-from iron_rook.review.agents.security import SecurityReviewer, SECURITY_FSM_TRANSITIONS
+from iron_rook.review.agents.security import SecurityReviewer
+from iron_rook.review.workflow_adapter import WORKFLOW_FSM_TRANSITIONS
 from iron_rook.review.base import ReviewContext
 from iron_rook.review.contracts import ReviewOutput
 
@@ -16,23 +13,24 @@ class TestSecurityFSMInitialization:
     """Test SecurityReviewer FSM initialization."""
 
     def test_security_reviewer_initializes_with_fsm(self):
-        """Verify SecurityReviewer initializes with LoopFSM."""
+        """Verify SecurityReviewer initializes with adapter."""
         reviewer = SecurityReviewer()
-        assert hasattr(reviewer, "_fsm")
+        assert hasattr(reviewer, "_adapter")
         assert hasattr(reviewer, "_phase_logger")
         assert hasattr(reviewer, "_phase_outputs")
         assert hasattr(reviewer, "_current_security_phase")
 
     def test_security_reviewer_phase_transitions_defined(self):
-        """Verify SECURITY_FSM_TRANSITIONS are correctly defined."""
-        assert SECURITY_FSM_TRANSITIONS == {
-            "intake": ["plan_todos"],
-            "plan_todos": ["delegate"],
-            "delegate": ["collect", "consolidate", "evaluate", "done"],
-            "collect": ["consolidate"],
-            "consolidate": ["evaluate"],
-            "evaluate": ["done"],
+        expected = {
+            "intake": {"plan"},
+            "plan": {"act"},
+            "act": {"synthesize"},
+            "synthesize": {"check"},
+            "check": {"plan", "act", "done"},
+            "done": set(),
         }
+        actual = {k: set(v) for k, v in WORKFLOW_FSM_TRANSITIONS.items()}
+        assert actual == expected
 
     def test_security_reviewer_initial_phase_is_intake(self):
         """Verify initial security phase is 'intake'."""
@@ -54,41 +52,43 @@ class TestSecurityFSMInitialization:
 class TestSecurityFSMTransitions:
     """Test security FSM state transitions."""
 
-    def test_valid_transition_intake_to_plan_todos(self):
-        """Verify intake -> plan_todos is a valid transition."""
+    def test_valid_transition_intake_to_plan(self):
+        """Verify intake -> plan is a valid transition."""
         reviewer = SecurityReviewer()
-        valid_transitions = SECURITY_FSM_TRANSITIONS.get("intake", [])
-        assert "plan_todos" in valid_transitions
+        valid_transitions = WORKFLOW_FSM_TRANSITIONS.get("intake", [])
+        assert "plan" in valid_transitions
 
-    def test_valid_transition_plan_todos_to_delegate(self):
-        """Verify plan_todos -> delegate is a valid transition."""
+    def test_valid_transition_plan_to_act(self):
+        """Verify plan -> act is a valid transition."""
         reviewer = SecurityReviewer()
-        valid_transitions = SECURITY_FSM_TRANSITIONS.get("plan_todos", [])
-        assert "delegate" in valid_transitions
+        valid_transitions = WORKFLOW_FSM_TRANSITIONS.get("plan", [])
+        assert "act" in valid_transitions
 
-    def test_valid_transition_delegate_to_collect(self):
-        """Verify delegate -> collect is a valid transition."""
+    def test_valid_transition_act_to_synthesize(self):
+        """Verify act -> synthesize is a valid transition."""
         reviewer = SecurityReviewer()
-        valid_transitions = SECURITY_FSM_TRANSITIONS.get("delegate", [])
-        assert "collect" in valid_transitions
+        valid_transitions = WORKFLOW_FSM_TRANSITIONS.get("act", [])
+        assert "synthesize" in valid_transitions
 
-    def test_valid_transition_collect_to_consolidate(self):
-        """Verify collect -> consolidate is a valid transition."""
+    def test_valid_transition_synthesize_to_check(self):
         reviewer = SecurityReviewer()
-        valid_transitions = SECURITY_FSM_TRANSITIONS.get("collect", [])
-        assert "consolidate" in valid_transitions
+        valid_transitions = WORKFLOW_FSM_TRANSITIONS.get("synthesize", [])
+        assert "check" in valid_transitions
 
-    def test_valid_transition_consolidate_to_evaluate(self):
-        """Verify consolidate -> evaluate is a valid transition."""
+    def test_valid_transition_check_to_done(self):
         reviewer = SecurityReviewer()
-        valid_transitions = SECURITY_FSM_TRANSITIONS.get("consolidate", [])
-        assert "evaluate" in valid_transitions
-
-    def test_valid_transition_evaluate_to_done(self):
-        """Verify evaluate -> done is a valid transition."""
-        reviewer = SecurityReviewer()
-        valid_transitions = SECURITY_FSM_TRANSITIONS.get("evaluate", [])
+        valid_transitions = WORKFLOW_FSM_TRANSITIONS.get("check", [])
         assert "done" in valid_transitions
+
+    def test_valid_transition_check_to_plan(self):
+        reviewer = SecurityReviewer()
+        valid_transitions = WORKFLOW_FSM_TRANSITIONS.get("check", [])
+        assert "plan" in valid_transitions
+
+    def test_valid_transition_check_to_act(self):
+        reviewer = SecurityReviewer()
+        valid_transitions = WORKFLOW_FSM_TRANSITIONS.get("check", [])
+        assert "act" in valid_transitions
 
 
 class TestSecurityPhaseMethods:
@@ -101,28 +101,22 @@ class TestSecurityPhaseMethods:
         assert hasattr(reviewer, "_run_intake")
 
     @pytest.mark.asyncio
-    async def test_run_plan_todos_method_exists(self):
-        """Verify _run_plan_todos method exists."""
+    async def test_run_plan_method_exists(self):
+        """Verify _run_plan method exists."""
         reviewer = SecurityReviewer()
-        assert hasattr(reviewer, "_run_plan_todos")
+        assert hasattr(reviewer, "_run_plan")
 
     @pytest.mark.asyncio
-    async def test_run_delegate_method_exists(self):
-        """Verify _run_delegate method exists."""
+    async def test_run_act_method_exists(self):
+        """Verify _run_act method exists."""
         reviewer = SecurityReviewer()
-        assert hasattr(reviewer, "_run_delegate")
+        assert hasattr(reviewer, "_run_act")
 
     @pytest.mark.asyncio
-    async def test_run_collect_method_exists(self):
-        """Verify _run_collect method exists."""
+    async def test_run_synthesize_method_exists(self):
+        """Verify _run_synthesize method exists."""
         reviewer = SecurityReviewer()
-        assert hasattr(reviewer, "_run_collect")
-
-    @pytest.mark.asyncio
-    async def test_run_consolidate_method_exists(self):
-        """Verify _run_consolidate method exists."""
-        reviewer = SecurityReviewer()
-        assert hasattr(reviewer, "_run_consolidate")
+        assert hasattr(reviewer, "_run_synthesize")
 
     @pytest.mark.asyncio
     async def test_run_evaluate_method_exists(self):
@@ -142,7 +136,7 @@ class TestSecurityPhaseLoggerIntegration:
 
         # Mock runner response
         mock_runner = AsyncMock()
-        mock_runner.run_with_retry.return_value = '{\n  "phase": "intake",\n  "data": {\n    "summary": "test",\n    "risk_hypotheses": [],\n    "questions": []\n  },\n  "next_phase_request": "plan_todos"\n}'
+        mock_runner.run_with_retry.return_value = '{\n  "phase": "intake",\n  "data": {\n    "summary": "test",\n    "risk_hypotheses": [],\n    "questions": []\n  },\n  "next_phase_request": "plan"\n}'
         mock_runner_class.return_value = mock_runner
 
         # Mock context
@@ -159,19 +153,19 @@ class TestSecurityPhaseLoggerIntegration:
         assert "phase" in output
         assert output["phase"] == "intake"
 
-        # Verify next_phase_request
+        # Verify next_phase_request (internal schema uses plan)
         assert "next_phase_request" in output
-        assert output["next_phase_request"] == "plan_todos"
+        assert output["next_phase_request"] == "plan"
 
     @patch("iron_rook.review.agents.security.SimpleReviewAgentRunner")
     @pytest.mark.asyncio
-    async def test_plan_todos_phase_logs_thinking(self, mock_runner_class):
+    async def test_plan_phase_logs_thinking(self, mock_runner_class):
         """Verify PLAN_TODOS phase uses SecurityPhaseLogger.log_thinking()."""
         reviewer = SecurityReviewer()
 
         # Mock runner response
         mock_runner = AsyncMock()
-        mock_runner.run_with_retry.return_value = '{\n  "phase": "plan_todos",\n  "data": {\n    "todos": [],\n    "delegation_plan": {},\n    "tools_considered": [],\n    "tools_chosen": [],\n    "why": ""\n  },\n  "next_phase_request": "delegate"\n}'
+        mock_runner.run_with_retry.return_value = '{\n  "phase": "plan",\n  "data": {\n    "todos": [],\n    "delegation_plan": {},\n    "tools_considered": [],\n    "tools_chosen": [],\n    "why": ""\n  },\n  "next_phase_request": "act"\n}'
         mock_runner_class.return_value = mock_runner
 
         # Mock context
@@ -182,15 +176,15 @@ class TestSecurityPhaseLoggerIntegration:
         )
 
         # Execute phase
-        output = await reviewer._run_plan_todos(context)
+        output = await reviewer._run_plan(context)
 
         # Verify phase is in output
         assert "phase" in output
-        assert output["phase"] == "plan_todos"
+        assert output["phase"] == "plan"
 
         # Verify next_phase_request
         assert "next_phase_request" in output
-        assert output["next_phase_request"] == "delegate"
+        assert output["next_phase_request"] == "act"
 
     @patch("iron_rook.review.agents.security.SimpleReviewAgentRunner")
     @pytest.mark.asyncio
@@ -233,13 +227,13 @@ class TestStateTransitionLogging:
         reviewer._phase_logger.log_transition = Mock()
 
         # Valid transition
-        reviewer._transition_to_phase("plan_todos")
+        reviewer._transition_to_phase("plan")
 
         # Verify log_transition was called
-        reviewer._phase_logger.log_transition.assert_called_once_with("intake", "plan_todos")
+        reviewer._phase_logger.log_transition.assert_called_once_with("intake", "plan")
 
         # Verify current phase updated
-        assert reviewer.state == "plan_todos"
+        assert reviewer.state == "plan"
 
     def test_invalid_transition_raises_error(self):
         """Verify invalid transition raises ValueError."""
@@ -257,11 +251,10 @@ class TestStateTransitionLogging:
         assert "Invalid transition" in str(exc_info.value)
         assert "done -> intake" in str(exc_info.value)
 
-    def test_all_six_phases_have_valid_transitions(self):
-        """Verify all 6 phases have at least one valid transition."""
-        all_phases = ["intake", "plan_todos", "delegate", "collect", "consolidate", "evaluate"]
+    def test_all_five_phases_have_valid_transitions(self):
+        all_phases = ["intake", "plan", "act", "synthesize", "check"]
         for phase in all_phases:
-            valid_transitions = SECURITY_FSM_TRANSITIONS.get(phase, [])
+            valid_transitions = WORKFLOW_FSM_TRANSITIONS.get(phase, [])
             assert len(valid_transitions) > 0, f"Phase {phase} has no valid transitions"
 
 
@@ -314,12 +307,12 @@ class TestReviewOutputGeneration:
         )
 
         # Build ReviewOutput
-        output = reviewer._build_review_output_from_evaluate(evaluate_output, context)
+        output = reviewer._build_review_output_from_check(evaluate_output, context)
 
         # Verify ReviewOutput structure
         assert isinstance(output, ReviewOutput)
         assert output.agent == "security_fsm"
-        assert output.severity == "medium"
+        assert output.severity == "warning"
         assert len(output.findings) == 1
         assert output.findings[0].severity == "medium"
         assert output.merge_gate.decision == "approve"
@@ -379,23 +372,21 @@ class TestFullFSMExecutionFlow:
 
     @patch("iron_rook.review.agents.security.SimpleReviewAgentRunner")
     @pytest.mark.asyncio
-    async def test_fsm_executes_all_six_phases(self, mock_runner_class):
-        """Verify FSM executes through all 6 phases."""
+    async def test_fsm_executes_all_five_phases(self, mock_runner_class):
+        """Verify FSM executes through all 5 phases."""
         reviewer = SecurityReviewer()
 
         # Mock runner responses for all phases
         mock_runner = AsyncMock()
         mock_runner.run_with_retry.side_effect = [
             # INTAKE response
-            '{\n  "phase": "intake",\n  "data": {\n    "summary": "test",\n    "risk_hypotheses": [],\n    "questions": []\n  },\n  "next_phase_request": "plan_todos"\n}',
-            # PLAN_TODOS response
-            '{\n  "phase": "plan_todos",\n  "data": {\n    "todos": [],\n    "delegation_plan": {},\n    "tools_considered": [],\n    "tools_chosen": [],\n    "why": ""\n  },\n  "next_phase_request": "delegate"\n}',
-            # DELEGATE response
-            '{\n  "phase": "delegate",\n  "data": {\n    "subagent_requests": [],\n    "self_analysis_plan": []\n  },\n  "next_phase_request": "collect"\n}',
-            # COLLECT response
-            '{\n  "phase": "collect",\n  "data": {\n    "todo_status": [],\n    "issues_with_results": []\n  },\n  "next_phase_request": "consolidate"\n}',
-            # CONSOLIDATE response
-            '{\n  "phase": "consolidate",\n  "data": {\n    "gates": {\n      "all_todos_resolved": true,\n      "evidence_present": true,\n      "findings_categorized": true,\n      "confidence_set": true\n    },\n    "missing_information": []\n  },\n  "next_phase_request": "evaluate"\n}',
+            '{\n  "phase": "intake",\n  "data": {\n    "summary": "test",\n    "risk_hypotheses": [],\n    "questions": []\n  },\n  "next_phase_request": "plan"\n}',
+            # PLAN response
+            '{\n  "phase": "plan",\n  "data": {\n    "todos": [],\n    "delegation_plan": {},\n    "tools_considered": [],\n    "tools_chosen": [],\n    "why": ""\n  },\n  "next_phase_request": "act"\n}',
+            # ACT response
+            '{\n  "phase": "act",\n  "data": {\n    "subagent_requests": [],\n    "self_analysis_plan": []\n  },\n  "next_phase_request": "synthesize"\n}',
+            # SYNTHESIZE response
+            '{\n  "phase": "synthesize",\n  "data": {\n    "gates": {\n      "all_todos_resolved": true,\n      "evidence_present": true,\n      "findings_categorized": true,\n      "confidence_set": true\n    },\n    "missing_information": []\n  },\n  "next_phase_request": "evaluate"\n}',
             # EVALUATE response
             '{\n  "phase": "evaluate",\n  "data": {\n    "findings": {\n      "critical": [],\n      "high": [],\n      "medium": [],\n      "low": []\n    },\n    "risk_assessment": {\n      "overall": "low",\n      "rationale": ""\n    },\n    "evidence_index": [],\n    "actions": {\n      "required": [],\n      "suggested": []\n    },\n    "confidence": 1.0,\n    "missing_information": []\n  },\n  "next_phase_request": "done"\n}',
         ]
@@ -420,11 +411,9 @@ class TestFullFSMExecutionFlow:
         assert output.agent == "security_fsm"
 
         # Verify all phases were logged
-        assert reviewer._phase_logger.log_thinking.call_count >= 6
+        assert reviewer._phase_logger.log_thinking.call_count >= 5
 
-        # Verify transitions were logged
-        # intake -> plan_todos, plan_todos -> delegate, delegate -> collect, collect -> consolidate, consolidate -> evaluate, evaluate -> done
-        assert reviewer._phase_logger.log_transition.call_count >= 6
+        assert reviewer._phase_logger.log_transition.call_count >= 5
 
     @patch("iron_rook.review.agents.security.SimpleReviewAgentRunner")
     @pytest.mark.asyncio

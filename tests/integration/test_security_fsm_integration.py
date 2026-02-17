@@ -1,7 +1,7 @@
 """Integration tests for SecurityReviewer end-to-end FSM execution.
 
-Tests complete 6-phase FSM flow:
-  - INTAKE → PLAN_TODOS → DELEGATE → COLLECT → CONSOLIDATE → EVALUATE → DONE
+Tests complete 5-phase FSM flow:
+  - INTAKE → PLAN → ACT → SYNTHESIZE → EVALUATE → DONE
   - Subagent dispatch and result aggregation
   - Result consolidation and de-duplication
   - Final report generation with schema validation
@@ -50,10 +50,10 @@ def mock_runner_responses():
       "Is session token validation implemented?"
     ]
   },
-  "next_phase_request": "plan_todos"
+  "next_phase_request": "plan"
 }""",
-        "plan_todos": """{
-  "phase": "plan_todos",
+        "plan": """{
+  "phase": "plan",
   "data": {
     "todos": [
       {
@@ -81,10 +81,10 @@ def mock_runner_responses():
     "tools_chosen": ["grep", "ast-grep"],
     "why": "High-risk authentication and injection areas require specialized subagents"
   },
-  "next_phase_request": "delegate"
+  "next_phase_request": "act"
 }""",
-        "delegate": """{
-  "phase": "delegate",
+        "act": """{
+  "phase": "act",
   "data": {
     "subagent_requests": [
       {
@@ -105,7 +105,7 @@ def mock_runner_responses():
       "Check CI/CD workflows for security issues"
     ]
   },
-  "next_phase_request": "collect"
+  "next_phase_request": "synthesize"
 }""",
         "collect": """{
   "phase": "collect",
@@ -138,7 +138,7 @@ def mock_runner_responses():
     ],
     "issues_with_results": []
   },
-  "next_phase_request": "consolidate"
+  "next_phase_request": "evaluate"
 }""",
         "consolidate": """{
   "phase": "consolidate",
@@ -202,8 +202,8 @@ class TestCompleteFSMExecution:
         mock_runner = AsyncMock()
         mock_runner.run_with_retry.side_effect = [
             mock_runner_responses["intake"],
-            mock_runner_responses["plan_todos"],
-            mock_runner_responses["delegate"],
+            mock_runner_responses["plan"],
+            mock_runner_responses["act"],
             mock_runner_responses["collect"],
             mock_runner_responses["consolidate"],
             mock_runner_responses["evaluate"],
@@ -234,12 +234,10 @@ class TestCompleteFSMExecution:
         assert mock_runner.run_with_retry.call_count == 6
 
         # Verify thinking was logged for all phases
-        assert reviewer._phase_logger.log_thinking.call_count >= 6
+        assert reviewer._phase_logger.log_thinking.call_count >= 5
 
-        # Verify transitions were logged (6 transitions)
-        # intake -> plan_todos, plan_todos -> delegate, delegate -> collect,
-        # collect -> consolidate, consolidate -> evaluate, evaluate -> done
-        assert reviewer._phase_logger.log_transition.call_count >= 6
+        # Verify transitions were logged (5 transitions)
+        assert reviewer._phase_logger.log_transition.call_count >= 5
 
     @patch("iron_rook.review.agents.security.SimpleReviewAgentRunner")
     @pytest.mark.asyncio
@@ -259,11 +257,11 @@ class TestCompleteFSMExecution:
                 phase_order.append("intake")
                 return mock_runner_responses["intake"]
             elif "PLAN_TODOS" in system_prompt:
-                phase_order.append("plan_todos")
-                return mock_runner_responses["plan_todos"]
-            elif "DELEGATE" in system_prompt:
-                phase_order.append("delegate")
-                return mock_runner_responses["delegate"]
+                phase_order.append("plan")
+                return mock_runner_responses["plan"]
+            elif "ACT" in system_prompt:
+                phase_order.append("act")
+                return mock_runner_responses["act"]
             elif "COLLECT" in system_prompt:
                 phase_order.append("collect")
                 return mock_runner_responses["collect"]
@@ -282,7 +280,7 @@ class TestCompleteFSMExecution:
         await reviewer.review(mock_review_context)
 
         # Verify phase order
-        expected_order = ["intake", "plan_todos", "delegate", "collect", "consolidate", "evaluate"]
+        expected_order = ["intake", "plan", "act", "synthesize", "evaluate"]
         assert phase_order == expected_order
 
 
@@ -291,13 +289,13 @@ class TestSubagentDispatchAndCollection:
 
     @patch("iron_rook.review.agents.security.SimpleReviewAgentRunner")
     @pytest.mark.asyncio
-    async def test_subagent_requests_created_in_delegate_phase(
+    async def test_subagent_requests_created_in_act_phase(
         self, mock_runner_class, mock_review_context
     ):
-        """Test that DELEGATE phase creates subagent requests."""
+        """Test that ACT phase creates subagent requests."""
         reviewer = SecurityReviewer()
 
-        # Mock delegate phase response with subagent requests
+        # Mock act phase response with subagent requests
         mock_runner = AsyncMock()
         mock_runner.run_with_retry.side_effect = [
             """{
@@ -307,10 +305,10 @@ class TestSubagentDispatchAndCollection:
     "risk_hypotheses": [],
     "questions": []
   },
-  "next_phase_request": "plan_todos"
+  "next_phase_request": "plan"
 }""",
             """{
-  "phase": "plan_todos",
+  "phase": "plan",
   "data": {
     "todos": [
       {
@@ -326,10 +324,10 @@ class TestSubagentDispatchAndCollection:
     "tools_chosen": [],
     "why": ""
   },
-  "next_phase_request": "delegate"
+  "next_phase_request": "act"
 }""",
             """{
-  "phase": "delegate",
+  "phase": "act",
   "data": {
     "subagent_requests": [
       {
@@ -341,7 +339,7 @@ class TestSubagentDispatchAndCollection:
     ],
     "self_analysis_plan": []
   },
-  "next_phase_request": "collect"
+  "next_phase_request": "synthesize"
 }""",
             """{
   "phase": "collect",
@@ -349,7 +347,7 @@ class TestSubagentDispatchAndCollection:
     "todo_status": [],
     "issues_with_results": []
   },
-  "next_phase_request": "consolidate"
+  "next_phase_request": "evaluate"
 }""",
             """{
   "phase": "consolidate",
@@ -393,11 +391,11 @@ class TestSubagentDispatchAndCollection:
         # Execute review
         await reviewer.review(mock_review_context)
 
-        # Verify delegate phase output contains subagent_requests
-        delegate_output = reviewer._phase_outputs.get("delegate", {})
-        assert "data" in delegate_output
-        assert "subagent_requests" in delegate_output["data"]
-        subagent_requests = delegate_output["data"]["subagent_requests"]
+        # Verify act phase output contains subagent_requests
+        act_output = reviewer._phase_outputs.get("act", {})
+        assert "data" in act_output
+        assert "subagent_requests" in act_output["data"]
+        subagent_requests = act_output["data"]["subagent_requests"]
         assert len(subagent_requests) >= 1
         assert subagent_requests[0]["agent_type"] == "auth_security"
 
@@ -419,10 +417,10 @@ class TestSubagentDispatchAndCollection:
     "risk_hypotheses": [],
     "questions": []
   },
-  "next_phase_request": "plan_todos"
+  "next_phase_request": "plan"
 }""",
             """{
-  "phase": "plan_todos",
+  "phase": "plan",
   "data": {
     "todos": [
       {
@@ -436,15 +434,15 @@ class TestSubagentDispatchAndCollection:
     "tools_chosen": [],
     "why": ""
   },
-  "next_phase_request": "delegate"
+  "next_phase_request": "act"
 }""",
             """{
-  "phase": "delegate",
+  "phase": "act",
   "data": {
     "subagent_requests": [],
     "self_analysis_plan": []
   },
-  "next_phase_request": "collect"
+  "next_phase_request": "synthesize"
 }""",
             """{
   "phase": "collect",
@@ -477,7 +475,7 @@ class TestSubagentDispatchAndCollection:
     ],
     "issues_with_results": []
   },
-  "next_phase_request": "consolidate"
+  "next_phase_request": "evaluate"
 }""",
             """{
   "phase": "consolidate",
@@ -549,10 +547,10 @@ class TestResultConsolidation:
     "risk_hypotheses": [],
     "questions": []
   },
-  "next_phase_request": "plan_todos"
+  "next_phase_request": "plan"
 }""",
             """{
-  "phase": "plan_todos",
+  "phase": "plan",
   "data": {
     "todos": [],
     "delegation_plan": {},
@@ -560,15 +558,15 @@ class TestResultConsolidation:
     "tools_chosen": [],
     "why": ""
   },
-  "next_phase_request": "delegate"
+  "next_phase_request": "act"
 }""",
             """{
-  "phase": "delegate",
+  "phase": "act",
   "data": {
     "subagent_requests": [],
     "self_analysis_plan": []
   },
-  "next_phase_request": "collect"
+  "next_phase_request": "synthesize"
 }""",
             """{
   "phase": "collect",
@@ -576,7 +574,7 @@ class TestResultConsolidation:
     "todo_status": [],
     "issues_with_results": []
   },
-  "next_phase_request": "consolidate"
+  "next_phase_request": "evaluate"
 }""",
             """{
   "phase": "consolidate",
@@ -687,8 +685,8 @@ class TestFinalReportGeneration:
         mock_runner = AsyncMock()
         mock_runner.run_with_retry.side_effect = [
             mock_runner_responses["intake"],
-            mock_runner_responses["plan_todos"],
-            mock_runner_responses["delegate"],
+            mock_runner_responses["plan"],
+            mock_runner_responses["act"],
             mock_runner_responses["collect"],
             mock_runner_responses["consolidate"],
             mock_runner_responses["evaluate"],
@@ -750,8 +748,8 @@ class TestFinalReportGeneration:
         mock_runner = AsyncMock()
         mock_runner.run_with_retry.side_effect = [
             mock_runner_responses["intake"],
-            mock_runner_responses["plan_todos"],
-            mock_runner_responses["delegate"],
+            mock_runner_responses["plan"],
+            mock_runner_responses["act"],
             mock_runner_responses["collect"],
             mock_runner_responses["consolidate"],
             mock_runner_responses["evaluate"],
@@ -776,8 +774,8 @@ class TestFinalReportGeneration:
         mock_runner = AsyncMock()
         mock_runner.run_with_retry.side_effect = [
             mock_runner_responses["intake"],
-            mock_runner_responses["plan_todos"],
-            mock_runner_responses["delegate"],
+            mock_runner_responses["plan"],
+            mock_runner_responses["act"],
             mock_runner_responses["collect"],
             mock_runner_responses["consolidate"],
             mock_runner_responses["evaluate"],
@@ -803,22 +801,22 @@ class TestFinalReportGeneration:
             """{
   "phase": "intake",
   "data": {"summary": "test", "risk_hypotheses": [], "questions": []},
-  "next_phase_request": "plan_todos"
+  "next_phase_request": "plan"
 }""",
             """{
-  "phase": "plan_todos",
+  "phase": "plan",
   "data": {"todos": [], "delegation_plan": {}, "tools_considered": [], "tools_chosen": [], "why": ""},
-  "next_phase_request": "delegate"
+  "next_phase_request": "act"
 }""",
             """{
-  "phase": "delegate",
+  "phase": "act",
   "data": {"subagent_requests": [], "self_analysis_plan": []},
-  "next_phase_request": "collect"
+  "next_phase_request": "synthesize"
 }""",
             """{
   "phase": "collect",
   "data": {"todo_status": [], "issues_with_results": []},
-  "next_phase_request": "consolidate"
+  "next_phase_request": "evaluate"
 }""",
             """{
   "phase": "consolidate",
@@ -870,19 +868,19 @@ class TestSubagentFailureHandling:
             """{
   "phase": "intake",
   "data": {"summary": "test", "risk_hypotheses": [], "questions": []},
-  "next_phase_request": "plan_todos"
+  "next_phase_request": "plan"
 }""",
             # PLAN_TODOS - success
             """{
-  "phase": "plan_todos",
+  "phase": "plan",
   "data": {"todos": [], "delegation_plan": {}, "tools_considered": [], "tools_chosen": [], "why": ""},
-  "next_phase_request": "delegate"
+  "next_phase_request": "act"
 }""",
-            # DELEGATE - success
+            # ACT - success
             """{
-  "phase": "delegate",
+  "phase": "act",
   "data": {"subagent_requests": [], "self_analysis_plan": []},
-  "next_phase_request": "collect"
+  "next_phase_request": "synthesize"
 }""",
             # COLLECT - success with issues
             """{
@@ -896,7 +894,7 @@ class TestSubagentFailureHandling:
       }
     ]
   },
-  "next_phase_request": "consolidate"
+  "next_phase_request": "evaluate"
 }""",
             # CONSOLIDATE - success
             """{
@@ -944,15 +942,15 @@ class TestSubagentFailureHandling:
             """{
   "phase": "intake",
   "data": {"summary": "test", "risk_hypotheses": [], "questions": []},
-  "next_phase_request": "plan_todos"
+  "next_phase_request": "plan"
 }""",
             # PLAN_TODOS - success
             """{
-  "phase": "plan_todos",
+  "phase": "plan",
   "data": {"todos": [], "delegation_plan": {}, "tools_considered": [], "tools_chosen": [], "why": ""},
-  "next_phase_request": "delegate"
+  "next_phase_request": "act"
 }""",
-            # DELEGATE - raise exception
+            # ACT - raise exception
             Exception("LLM API timeout"),
         ]
         mock_runner_class.return_value = mock_runner
@@ -983,8 +981,8 @@ class TestPhaseTransitionsLogged:
         mock_runner = AsyncMock()
         mock_runner.run_with_retry.side_effect = [
             mock_runner_responses["intake"],
-            mock_runner_responses["plan_todos"],
-            mock_runner_responses["delegate"],
+            mock_runner_responses["plan"],
+            mock_runner_responses["act"],
             mock_runner_responses["collect"],
             mock_runner_responses["consolidate"],
             mock_runner_responses["evaluate"],
@@ -999,15 +997,14 @@ class TestPhaseTransitionsLogged:
 
         # Verify all 6 transitions were logged
         expected_transitions = [
-            ("intake", "plan_todos"),
-            ("plan_todos", "delegate"),
-            ("delegate", "collect"),
-            ("collect", "consolidate"),
-            ("consolidate", "evaluate"),
+            ("intake", "plan"),
+            ("plan", "act"),
+            ("act", "synthesize"),
+            ("synthesize", "evaluate"),
             ("evaluate", "done"),
         ]
 
-        assert reviewer._phase_logger.log_transition.call_count == 6
+        assert reviewer._phase_logger.log_transition.call_count == 5
 
         # Verify transition order
         actual_calls = reviewer._phase_logger.log_transition.call_args_list
@@ -1036,8 +1033,8 @@ class TestPhaseTransitionsLogged:
         mock_runner = AsyncMock()
         mock_runner.run_with_retry.side_effect = [
             mock_runner_responses["intake"],
-            mock_runner_responses["plan_todos"],
-            mock_runner_responses["delegate"],
+            mock_runner_responses["plan"],
+            mock_runner_responses["act"],
             mock_runner_responses["collect"],
             mock_runner_responses["consolidate"],
             mock_runner_responses["evaluate"],
@@ -1052,11 +1049,10 @@ class TestPhaseTransitionsLogged:
 
         # Verify transition order
         expected_order = [
-            ("intake", "plan_todos"),
-            ("plan_todos", "delegate"),
-            ("delegate", "collect"),
-            ("collect", "consolidate"),
-            ("consolidate", "evaluate"),
+            ("intake", "plan"),
+            ("plan", "act"),
+            ("act", "synthesize"),
+            ("synthesize", "evaluate"),
             ("evaluate", "done"),
         ]
         assert transition_order == expected_order
@@ -1077,8 +1073,8 @@ class TestThinkingLoggedForAllPhases:
         mock_runner = AsyncMock()
         mock_runner.run_with_retry.side_effect = [
             mock_runner_responses["intake"],
-            mock_runner_responses["plan_todos"],
-            mock_runner_responses["delegate"],
+            mock_runner_responses["plan"],
+            mock_runner_responses["act"],
             mock_runner_responses["collect"],
             mock_runner_responses["consolidate"],
             mock_runner_responses["evaluate"],
@@ -1105,7 +1101,7 @@ class TestThinkingLoggedForAllPhases:
             phase_thinking_calls[phase].append(thinking)
 
         # Verify all phases have thinking logged
-        expected_phases = ["INTAKE", "PLAN_TODOS", "DELEGATE", "COLLECT", "CONSOLIDATE", "EVALUATE"]
+        expected_phases = ["INTAKE", "PLAN", "ACT", "SYNTHESIZE", "EVALUATE"]
         for phase in expected_phases:
             assert phase in phase_thinking_calls, f"Phase {phase} not in thinking logs"
             assert len(phase_thinking_calls[phase]) >= 1, f"Phase {phase} has no thinking logs"
@@ -1128,7 +1124,7 @@ class TestThinkingLoggedForAllPhases:
     "risk_hypotheses": [],
     "questions": []
   },
-  "next_phase_request": "plan_todos"
+  "next_phase_request": "plan"
 }"""
         mock_runner_class.return_value = mock_runner
 
@@ -1167,11 +1163,11 @@ class TestThinkingLoggedForAllPhases:
     "risk_hypotheses": [],
     "questions": []
   },
-  "next_phase_request": "plan_todos"
+  "next_phase_request": "plan"
 }
 ```""",
             """{
-  "phase": "plan_todos",
+  "phase": "plan",
   "data": {
     "todos": [],
     "delegation_plan": {},
@@ -1179,15 +1175,15 @@ class TestThinkingLoggedForAllPhases:
     "tools_chosen": [],
     "why": ""
   },
-  "next_phase_request": "delegate"
+  "next_phase_request": "act"
 }""",
             """{
-  "phase": "delegate",
+  "phase": "act",
   "data": {
     "subagent_requests": [],
     "self_analysis_plan": []
   },
-  "next_phase_request": "collect"
+  "next_phase_request": "synthesize"
 }""",
             """{
   "phase": "collect",
@@ -1195,7 +1191,7 @@ class TestThinkingLoggedForAllPhases:
     "todo_status": [],
     "issues_with_results": []
   },
-  "next_phase_request": "consolidate"
+  "next_phase_request": "evaluate"
 }""",
             """{
   "phase": "consolidate",
@@ -1261,8 +1257,8 @@ class TestThinkingFramesWorkflow:
         mock_runner = AsyncMock()
         mock_runner.run_with_retry.side_effect = [
             mock_runner_responses["intake"],
-            mock_runner_responses["plan_todos"],
-            mock_runner_responses["delegate"],
+            mock_runner_responses["plan"],
+            mock_runner_responses["act"],
             mock_runner_responses["collect"],
             mock_runner_responses["consolidate"],
             mock_runner_responses["evaluate"],
@@ -1277,7 +1273,7 @@ class TestThinkingFramesWorkflow:
         assert output.agent == "security_fsm"
 
         # Verify all 6 phases were executed
-        expected_phases = ["intake", "plan_todos", "delegate", "collect", "consolidate", "evaluate"]
+        expected_phases = ["intake", "plan", "act", "synthesize", "evaluate"]
         for phase in expected_phases:
             assert phase in reviewer._phase_outputs, f"Phase {phase} not in outputs"
 
@@ -1293,8 +1289,8 @@ class TestThinkingFramesWorkflow:
         mock_runner = AsyncMock()
         mock_runner.run_with_retry.side_effect = [
             mock_runner_responses["intake"],
-            mock_runner_responses["plan_todos"],
-            mock_runner_responses["delegate"],
+            mock_runner_responses["plan"],
+            mock_runner_responses["act"],
             mock_runner_responses["collect"],
             mock_runner_responses["consolidate"],
             mock_runner_responses["evaluate"],
@@ -1332,8 +1328,8 @@ class TestThinkingFramesWorkflow:
         mock_runner = AsyncMock()
         mock_runner.run_with_retry.side_effect = [
             mock_runner_responses["intake"],
-            mock_runner_responses["plan_todos"],
-            mock_runner_responses["delegate"],
+            mock_runner_responses["plan"],
+            mock_runner_responses["act"],
             mock_runner_responses["collect"],
             mock_runner_responses["consolidate"],
             mock_runner_responses["evaluate"],
@@ -1357,7 +1353,7 @@ class TestThinkingFramesWorkflow:
             assert hasattr(frame, "decision")
 
         # Verify phase states in frames match expected order
-        expected_states = ["intake", "plan_todos", "delegate", "collect", "consolidate", "evaluate"]
+        expected_states = ["intake", "plan", "act", "synthesize", "evaluate"]
         actual_states = [frame.state for frame in reviewer._thinking_log.frames]
         assert actual_states == expected_states
 
@@ -1373,8 +1369,8 @@ class TestThinkingFramesWorkflow:
         mock_runner = AsyncMock()
         mock_runner.run_with_retry.side_effect = [
             mock_runner_responses["intake"],
-            mock_runner_responses["plan_todos"],
-            mock_runner_responses["delegate"],
+            mock_runner_responses["plan"],
+            mock_runner_responses["act"],
             mock_runner_responses["collect"],
             mock_runner_responses["consolidate"],
             mock_runner_responses["evaluate"],
@@ -1390,37 +1386,30 @@ class TestThinkingFramesWorkflow:
         # Verify INTAKE frame content
         intake_frame = frames_by_phase.get("intake")
         assert intake_frame is not None
-        assert intake_frame.decision == "plan_todos"
+        assert intake_frame.decision == "plan"
         assert len(intake_frame.goals) > 0
         assert len(intake_frame.checks) > 0
 
         # Verify PLAN_TODOS frame content
-        plan_todos_frame = frames_by_phase.get("plan_todos")
-        assert plan_todos_frame is not None
-        assert plan_todos_frame.decision == "delegate"
-        assert len(plan_todos_frame.goals) > 0
-        assert len(plan_todos_frame.checks) > 0
+        plan_frame = frames_by_phase.get("plan")
+        assert plan_frame is not None
+        assert plan_frame.decision == "act"
+        assert len(plan_frame.goals) > 0
+        assert len(plan_frame.checks) > 0
 
-        # Verify DELEGATE frame content
-        delegate_frame = frames_by_phase.get("delegate")
-        assert delegate_frame is not None
-        assert delegate_frame.decision == "collect"
-        assert len(delegate_frame.goals) > 0
-        assert len(delegate_frame.checks) > 0
+        # Verify ACT frame content
+        act_frame = frames_by_phase.get("act")
+        assert act_frame is not None
+        assert act_frame.decision == "collect"
+        assert len(act_frame.goals) > 0
+        assert len(act_frame.checks) > 0
 
-        # Verify COLLECT frame content
-        collect_frame = frames_by_phase.get("collect")
-        assert collect_frame is not None
-        assert collect_frame.decision == "consolidate"
-        assert len(collect_frame.goals) > 0
-        assert len(collect_frame.checks) > 0
-
-        # Verify CONSOLIDATE frame content
-        consolidate_frame = frames_by_phase.get("consolidate")
-        assert consolidate_frame is not None
-        assert consolidate_frame.decision == "evaluate"
-        assert len(consolidate_frame.goals) > 0
-        assert len(consolidate_frame.checks) > 0
+        # Verify SYNTHESIZE frame content
+        synthesize_frame = frames_by_phase.get("synthesize")
+        assert synthesize_frame is not None
+        assert synthesize_frame.decision == "evaluate"
+        assert len(synthesize_frame.goals) > 0
+        assert len(synthesize_frame.checks) > 0
 
         # Verify EVALUATE frame content
         evaluate_frame = frames_by_phase.get("evaluate")
@@ -1441,8 +1430,8 @@ class TestThinkingFramesWorkflow:
         mock_runner = AsyncMock()
         mock_runner.run_with_retry.side_effect = [
             mock_runner_responses["intake"],
-            mock_runner_responses["plan_todos"],
-            mock_runner_responses["delegate"],
+            mock_runner_responses["plan"],
+            mock_runner_responses["act"],
             mock_runner_responses["collect"],
             mock_runner_responses["consolidate"],
             mock_runner_responses["evaluate"],
@@ -1454,11 +1443,10 @@ class TestThinkingFramesWorkflow:
 
         # Verify each frame has correct decision
         expected_decisions = {
-            "intake": "plan_todos",
-            "plan_todos": "delegate",
-            "delegate": "collect",
-            "collect": "consolidate",
-            "consolidate": "evaluate",
+            "intake": "plan",
+            "plan": "act",
+            "act": "synthesize",
+            "synthesize": "evaluate",
             "evaluate": "done",
         }
 
@@ -1480,8 +1468,8 @@ class TestThinkingFramesWorkflow:
         mock_runner = AsyncMock()
         mock_runner.run_with_retry.side_effect = [
             mock_runner_responses["intake"],
-            mock_runner_responses["plan_todos"],
-            mock_runner_responses["delegate"],
+            mock_runner_responses["plan"],
+            mock_runner_responses["act"],
             mock_runner_responses["collect"],
             mock_runner_responses["consolidate"],
             mock_runner_responses["evaluate"],

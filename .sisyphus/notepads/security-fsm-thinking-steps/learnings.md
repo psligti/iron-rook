@@ -71,3 +71,64 @@
 - Goals/Checks/Risks displayed with appropriate labels
 - Decision shown at end
 - Logs to internal logger with counts: "goals=N, checks=N, risks=N, steps=N, decision=X"
+
+## 2026-02-11T21:55:44Z - Task: Update _run_collect() to create ThinkingFrame
+
+### _run_collect() ThinkingFrame Pattern
+- Similar structure to _run_delegate() and _run_plan_todos()
+- Goals for COLLECT phase:
+  - Validate subagent results and findings
+  - Mark TODO statuses based on completion
+  - Ensure findings quality and completeness
+- Checks for COLLECT phase:
+  - Verify all subagent responses are received and valid
+  - Validate findings structure and required fields
+  - Ensure TODO status updates are consistent
+- Risks for COLLECT phase:
+  - Malformed subagent responses
+  - Incomplete or inconsistent findings
+  - Missing status updates for TODOs
+- Uses `kind="transition"` for ThinkingStep (same as plan_todos)
+- Decision defaults to "consolidate" from FSM_TRANSITIONS
+
+### ThinkingStep kind Literal Values
+- Valid values: 'transition', 'tool', 'delegate', 'gate', 'stop'
+- Use `kind="transition"` for phase transitions (plan_todos, collect)
+- Use `kind="delegate"` for delegation phase
+- Cannot use phase name as kind (e.g., "collect" is invalid)
+
+### Verification
+- All 30 tests in test_security_thinking.py pass
+- Collect phase test: test_collect_phase_logs_thinking_from_response
+
+## 2026-02-11T22:05:00Z - Task: Update _run_evaluate() to create ThinkingFrame
+
+### _run_evaluate() ThinkingFrame Pattern
+- Final phase in FSM (transitions to "done")
+- Goals for EVALUATE phase:
+  - Assess findings severity (critical/high/medium/low)
+  - Generate comprehensive risk assessment
+  - Provide clear recommendations for each finding
+  - Determine overall risk level (critical/high/medium/low)
+  - Specify required and suggested actions
+- Checks for EVALUATE phase:
+  - Verify findings are properly categorized by severity
+  - Ensure evidence is provided for each finding
+  - Check recommendations are actionable and specific
+  - Validate risk assessment is consistent with findings
+- Risks for EVALUATE phase:
+  - Underestimating critical vulnerabilities
+  - Missing high-impact security issues
+  - Providing ambiguous or impractical recommendations
+  - Inconsistent severity classification
+- Uses `kind="transition"` for ThinkingStep
+- Decision defaults to "done" (final phase)
+
+### Parallel Task Execution
+- Tasks run in parallel (e.g., _run_consolidate and _run_evaluate)
+- File can be modified by other tasks between read and edit
+- Solution: Re-read file before editing to avoid conflicts
+
+### Verification
+- All 30 tests in test_security_thinking.py pass
+- Evaluate phase test: test_evaluate_phase_logs_thinking_from_response

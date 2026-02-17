@@ -101,7 +101,7 @@ Add structured "thinking steps" to the security FSM to improve observability and
 - [x] All tests pass (100% pass rate)
 - [x] Existing tests unchanged and passing
 - [x] Code follows existing Pydantic patterns exactly
-- [ ] Backward compatibility verified (no API changes)
+- [x] Backward compatibility verified (no API changes)
 
 ### Must Have
 - ThinkingStep model with kind, why, evidence, next, confidence fields
@@ -1020,7 +1020,7 @@ Parallel Speedup: ~50% faster than sequential
   - Files: `iron_rook/review/agents/security.py`
   - Pre-commit: `pytest tests/unit/review/agents/test_security_thinking.py::TestSecurityReviewerThinkingLog -xvs`
 
-- [ ] 8. Update _run_intake() to create ThinkingFrame
+- [x] 8. Update _run_intake() to create ThinkingFrame
 
   **What to do**:
   - Create ThinkingFrame in `_run_intake()` before LLM call
@@ -1841,15 +1841,15 @@ python -c "from iron_rook.review.agents.security import SecurityReviewer; r = Se
 ```
 
 ### Final Checklist
-- [ ] All 3 Pydantic models created (ThinkingStep, ThinkingFrame, RunLog)
-- [ ] All 3 models follow existing Pydantic patterns (BaseModel, ConfigDict, Field)
-- [ ] SecurityPhaseLogger.log_thinking_frame() method added
-- [ ] SecurityReviewer._thinking_log accumulator added (internal only)
-- [ ] All 6 phase handlers updated to create ThinkingFrames
-- [ ] All tests pass (100% pass rate)
-- [ ] Backward compatibility verified (existing tests unchanged and passing)
-- [ ] Code follows existing patterns exactly
-- [ ] No public API changes (SecurityReviewer API unchanged)
-- [ ] RunLog NOT exposed in public API
-- [ ] Must NOT Have items excluded (no UI, no export, no analytics)
-- [ ] Scope locked down (all tasks completed, no extras)
+- [x] All 3 Pydantic models created (ThinkingStep, ThinkingFrame, RunLog)
+- [x] All 3 models follow existing Pydantic patterns (BaseModel, ConfigDict, Field)
+- [x] SecurityPhaseLogger.log_thinking_frame() method added
+- [x] SecurityReviewer._thinking_log accumulator added (internal only)
+- [x] All 6 phase handlers updated to create ThinkingFrames
+- [x] All tests pass (100% pass rate)
+- [x] Backward compatibility verified (existing tests unchanged and passing)
+- [x] Code follows existing patterns exactly
+- [x] No public API changes (SecurityReviewer API unchanged)
+- [x] RunLog NOT exposed in public API
+- [x] Must NOT Have items excluded (no UI, no export, no analytics)
+- [x] Scope locked down (all tasks completed, no extras)

@@ -35,6 +35,7 @@ from iron_rook.review.contracts import (
     RunLog,
 )
 from iron_rook.review.security_phase_logger import SecurityPhaseLogger
+from iron_rook.review.security_context import load_security_context, classify_finding_severity
 from dawn_kestrel.core.harness import SimpleReviewAgentRunner
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,7 @@ class SecuritySubagent(BaseReviewerAgent):
         verifier=None,
         max_retries: int = 3,
         agent_runtime=None,
+        repo_root: str = "",
     ):
         self._task = task
         self._current_phase = "intake"
@@ -99,6 +101,8 @@ class SecuritySubagent(BaseReviewerAgent):
         self._findings_per_iteration: List[int] = []
         self._original_intent: Dict[str, Any] = {}
         self._context_data: Dict[str, Any] = {}
+        self._repo_root = repo_root
+        self._security_context = ""
 
     def get_agent_name(self) -> str:
         return f"security_subagent_{self._task.get('todo_id', 'unknown')}"
@@ -123,6 +127,15 @@ class SecuritySubagent(BaseReviewerAgent):
         return paths if isinstance(paths, list) else [paths] if paths else ["**/*.py"]
 
     def get_system_prompt(self) -> str:
+        context_section = (
+            f"""
+
+{self._security_context}
+"""
+            if self._security_context
+            else ""
+        )
+
         return f"""You are a Security Subagent.
 
 You execute a single security task assigned by the parent SecurityReviewer.
@@ -150,10 +163,19 @@ Your assigned task:
 {json.dumps(self._task, indent=2)}
 
 Focus on finding evidence-based security findings. Use tools to verify your analysis.
-"""
+{context_section}"""
 
     async def review(self, context: ReviewContext) -> ReviewOutput:
         """Execute security task using 5-phase ReAct-style FSM."""
+        from iron_rook.review.llm_audit_logger import SpanContext
+
+        self._repo_root = context.repo_root
+        self._security_context = load_security_context(context.repo_root)
+
+        with SpanContext(span_name=self._task.get("title", "unknown")):
+            return await self._run_subagent_fsm(context)
+
+    async def _run_subagent_fsm(self, context: ReviewContext) -> ReviewOutput:
         self._phase_outputs = {}
         self._current_phase = "intake"
         self._iteration_count = 0
@@ -232,7 +254,9 @@ Focus on finding evidence-based security findings. Use tools to verify your anal
                     self._phase_outputs["synthesize"] = output
                     next_phase = output.get("next_phase_request", "done")
 
-                    if self._should_stop():
+                    # Only override next_phase to "done" if LLM didn't explicitly set it
+                    # and stop conditions are met
+                    if next_phase in ("done", "plan") and self._should_stop():
                         next_phase = "done"
 
                     logger.info(
@@ -374,16 +398,8 @@ Focus on finding evidence-based security findings. Use tools to verify your anal
 
         thinking = self._extract_thinking_from_response(response_text)
 
-        plan_data = {}
-        try:
-            parsed = json.loads(
-                response_text.split("```json")[1].split("```")[0]
-                if "```json" in response_text
-                else response_text
-            )
-            plan_data = parsed.get("data", {})
-        except (json.JSONDecodeError, IndexError):
-            pass
+        output = self._parse_response(response_text, "plan")
+        plan_data = output.get("data", {})
 
         self._context_data["current_plan"] = plan_data
 
@@ -416,7 +432,6 @@ Focus on finding evidence-based security findings. Use tools to verify your anal
         self._phase_logger.log_thinking_frame(frame)
         self._thinking_log.add(frame)
 
-        output = self._parse_response(response_text, "plan")
         return output
 
     async def _run_act(self, context: ReviewContext) -> Dict[str, Any]:
@@ -433,16 +448,9 @@ Focus on finding evidence-based security findings. Use tools to verify your anal
 
         thinking = self._extract_thinking_from_response(response_text)
 
-        act_data = {}
-        try:
-            parsed = json.loads(
-                response_text.split("```json")[1].split("```")[0]
-                if "```json" in response_text
-                else response_text
-            )
-            act_data = parsed.get("data", {})
-        except (json.JSONDecodeError, IndexError):
-            pass
+        output = self._parse_response(response_text, "act")
+
+        act_data = output.get("data", {})
 
         act_data["tool_results"] = tool_results
         findings_count = len(act_data.get("findings", []))
@@ -479,7 +487,6 @@ Focus on finding evidence-based security findings. Use tools to verify your anal
         self._phase_logger.log_thinking_frame(frame)
         self._thinking_log.add(frame)
 
-        output = self._parse_response(response_text, "act")
         output["data"] = act_data
         return output
 
@@ -556,7 +563,7 @@ Focus on finding evidence-based security findings. Use tools to verify your anal
                 if os.path.exists(full_path):
                     with open(full_path, "r") as f:
                         content = f.read()
-                        results[file_path] = content[:3000]
+                        results[file_path] = content
                 else:
                     results[file_path] = "(file not found)"
             except Exception as e:
@@ -656,16 +663,8 @@ Focus on finding evidence-based security findings. Use tools to verify your anal
 
         thinking = self._extract_thinking_from_response(response_text)
 
-        synthesize_data = {}
-        try:
-            parsed = json.loads(
-                response_text.split("```json")[1].split("```")[0]
-                if "```json" in response_text
-                else response_text
-            )
-            synthesize_data = parsed.get("data", {})
-        except (json.JSONDecodeError, IndexError):
-            pass
+        output = self._parse_response(response_text, "synthesize")
+        synthesize_data = output.get("data", {})
 
         goal_achieved = synthesize_data.get("goal_achieved", False)
         next_phase = "done" if goal_achieved else "plan"
@@ -708,7 +707,6 @@ Focus on finding evidence-based security findings. Use tools to verify your anal
         self._phase_logger.log_thinking_frame(frame)
         self._thinking_log.add(frame)
 
-        output = self._parse_response(response_text, "synthesize")
         return output
 
     def _get_phase_prompt(self, phase: str, context: ReviewContext) -> str:
@@ -723,15 +721,46 @@ Task: Capture the intent, acceptance criteria, and evidence requirements for thi
 You are in the INTAKE phase of a 5-phase ReAct-style FSM.
 This phase runs ONCE at the beginning. Your output will be used to verify goal completion later.
 
+ACCEPTANCE CRITERIA REQUIREMENTS:
+1. Each criterion MUST be specific and verifiable
+2. Each criterion MUST define SUCCESS condition (what "met" looks like)
+3. Each criterion MUST define how to verify with evidence
+4. Minimum 3 criteria, maximum 5 criteria
+5. Criteria must be related to the specific security task, not generic
+
+GOOD CRITERION EXAMPLES:
+- "All BeautifulSoup usage points are wrapped in try-except blocks"
+  - Met: grep shows no bare BeautifulSoup calls outside try blocks
+  - Evidence: grep output with line numbers
+- "HTML sanitization removes <script>, <style>, <noscript> tags"
+  - Met: grep shows soup.decompose() calls for these tags
+  - Evidence: grep matches and code snippets
+- "Input validation is called before passing to GenAI API"
+  - Met: grep shows validate_*() function called before GenAI call
+  - Evidence: grep showing function call with line numbers
+
+BAD CRITERION EXAMPLES TO AVOID:
+- "Check for security issues" (too vague, not verifiable)
+- "Ensure code is safe" (no specific success condition)
+- "Review HTML handling" (no verification method)
+- "Follow best practices" (generic, not specific to task)
+
+EVIDENCE REQUIRED REQUIREMENTS:
+1. List 3-5 specific evidence types needed (grep patterns, code locations)
+2. For each evidence type, specify WHAT you expect to see (e.g., "grep for 'validate_html_body' function")
+3. Include file patterns if relevant (e.g., "**/services/*.py")
+
 Output JSON format:
 {{
   "phase": "intake",
   "data": {{
     "task_understanding": "Clear description of what you need to analyze",
     "acceptance_criteria": [
-      "Criterion 1: e.g., 'Identify all HTML sanitization code'",
-      "Criterion 2: e.g., 'Verify sanitization removes dangerous tags'",
-      "Criterion 3: e.g., 'Check for bypass vectors'"
+      {{
+        "criterion": "Specific criterion text",
+        "success_condition": "What indicates this criterion is met",
+        "verification_method": "How to verify with evidence"
+      }}
     ],
     "evidence_required": [
       "grep results for sanitization patterns",
@@ -760,6 +789,27 @@ Available tools:
 - semgrep: Semantic code analysis (pattern-based)
 - read: Read file contents (detailed analysis)
 
+PLAN REQUIREMENTS:
+1. "tools_to_use": List 2-4 specific tools (not all tools available)
+2. "search_patterns": 3-5 concrete patterns to search (not vague topics)
+3. "analysis_plan": Specific steps you'll take (not general approach)
+4. "expected_evidence": What concrete evidence you expect (grep output, code snippets)
+5. "rationale": Why these specific tools/patterns for THIS task
+
+BAD PLANNING PATTERNS TO AVOID:
+- "use grep to search code" (vague - which patterns?)
+- "use read to analyze files" (which files? what to look for?)
+- "use bandit to check security" (already done by bandit, be specific about what you're checking)
+- "various security tools" (not actionable)
+- "search for patterns" (which patterns?)
+
+GOOD PLAN EXAMPLE:
+"tools_to_use": ["grep", "read"],
+"search_patterns": ["html\\.escape\\(", "bleach\\.clean", "DOMPurify"],
+"analysis_plan": "1. Search for HTML sanitization libraries, 2. Read usage sites, 3. Check if dangerous HTML tags are removed before sanitization",
+"expected_evidence": "grep matches showing import statements, code snippets showing sanitization calls",
+"rationale": "Task asks about HTML sanitization - need to find which library is used and whether it's called before sending to GenAI"
+
 Output JSON format:
 {{
   "phase": "plan",
@@ -785,6 +835,31 @@ Task: Analyze the tool execution results and generate findings.
 IMPORTANT: Tool results have been EXECUTED and are provided below.
 Use the ACTUAL tool outputs as evidence - do not speculate.
 
+EVIDENCE REQUIREMENTS (CRITICAL):
+1. "evidence" field MUST contain concrete evidence with file:line: numbers
+2. Each evidence item MUST include: file path, line number(s), and actual code snippet
+3. Code snippets should be the EXACT code from tool outputs, not paraphrased descriptions
+4. For grep/rg results: include the matching lines with line numbers
+5. For read results: include relevant code sections with line numbers
+6. NEVER use vague descriptions like "file X contains pattern Y" - show the actual code
+
+FINDING REQUIREMENTS:
+1. "description": Explain EXACTLY what the security issue is, with specific code locations
+2. "recommendations": Provide SPECIFIC, actionable fixes with code examples
+   - WRONG: "Implement comprehensive input validation"
+   - RIGHT: "Add validate_html_body(html_body: str) -> bool before line 245"
+3. "severity": Match severity to actual impact, not default to "medium"
+4. "confidence": Set based on evidence strength:
+   - "high": Strong evidence with exact code locations and reproduction steps
+   - "medium": Good evidence but some gaps remain
+   - "low": Weak or speculative evidence
+
+BAD PATTERNS TO AVOID:
+- "may not fully validate" (speculative)
+- "could not be verified" (speculative)
+- "consider implementing X" (not actionable)
+- "should" recommendations without code examples
+
 Output JSON format:
 {{
   "phase": "act",
@@ -794,8 +869,8 @@ Output JSON format:
         "severity": "critical|high|medium|low",
         "title": "Clear finding title",
         "description": "What was found and why it's a security issue",
-        "evidence": ["Specific evidence from tool outputs"],
-        "recommendations": ["How to fix this issue"]
+        "evidence": ["file:line: number - code snippet"],
+        "recommendations": ["Specific fix with code example"]
       }}
     ],
     "evidence_collected": ["Summary of evidence gathered"],
@@ -821,23 +896,37 @@ CRITICAL CONVERGENCE RULES:
 3. GOOD ENOUGH: If you have evidence addressing the core question, mark goal_achieved: true
 4. MAX 2 ITERATIONS: For most tasks, 1-2 iterations is sufficient. Looping more wastes time.
 
+CRITERIA STATUS REQUIREMENTS:
+For EACH acceptance criterion from INTAKE phase, you MUST:
+1. Set "status" to one of: "met", "partially_met", "not_met"
+2. Include "evidence" with specific evidence supporting the status
+3. Evidence must include: file:line: numbers and actual code snippets
+4. NEVER use vague status like "unable to verify" - be specific
+
+EVIDENCE VERIFICATION:
+- Check if "evidence" field in each finding has actual code snippets with line numbers
+- Reject findings with only descriptive text like "code may not fully validate"
+- Accept findings with concrete grep results, code excerpts, or tool outputs
+
 When to set goal_achieved: true:
 - You have ANY findings related to the task (even partial evidence counts)
 - You ran the requested tools and have results to report
 - You can answer the original question with current evidence
 - Iteration >= 2 AND you have findings (stop, don't loop forever)
+- All criteria statuses are either "met" or "partially_met" (no "not_met" with evidence)
 
 When to loop back to PLAN (goal_achieved: false):
 - Tool execution failed completely (not partial results)
 - Zero findings after iteration 1 for a search task
 - Critical file was not readable and you need it
+- Any criterion has "not_met" status with concrete evidence showing it's unresolvable
 
 Output JSON format:
 {{
   "phase": "synthesize",
   "data": {{
     "criteria_status": [
-      {{"criterion": "...", "status": "met|partially_met|not_met", "evidence": "..."}}
+      {{"criterion": "...", "status": "met|partially_met|not_met", "evidence": "file:line: code"}}
     ],
     "goal_achieved": true|false,
     "summary": "Overall assessment of the analysis",
@@ -962,19 +1051,44 @@ Be honest - set goal_achieved=true ONLY if all criteria are satisfied.
 """
 
     async def _execute_llm(self, system_prompt: str, user_message: str) -> str:
-        logger.info(
-            f"[{self.get_agent_name()}] Calling LLM (system_prompt: {len(system_prompt)} chars, user_message: {len(user_message)} chars)"
+        import time
+        from iron_rook.review.llm_audit_logger import LLMAuditLogger
+
+        llm_logger = LLMAuditLogger.get()
+        phase = self._current_phase or "unknown"
+
+        llm_logger.log_request(
+            agent_name=self.get_agent_name(),
+            phase=phase,
+            system_prompt=system_prompt,
+            user_message=user_message,
         )
+
         runner = SimpleReviewAgentRunner(
             agent_name=self.get_agent_name(),
             allowed_tools=self.get_allowed_tools(),
         )
 
+        start_time = time.time()
         try:
             response_text = await runner.run_with_retry(system_prompt, user_message)
+            duration_ms = int((time.time() - start_time) * 1000)
+
+            llm_logger.log_response(
+                agent_name=self.get_agent_name(),
+                phase=phase,
+                response=response_text,
+                duration_ms=duration_ms,
+            )
+
             logger.info(f"[{self.get_agent_name()}] LLM response: {len(response_text)} chars")
             return response_text
         except Exception as e:
+            llm_logger.log_error(
+                agent_name=self.get_agent_name(),
+                phase=phase,
+                error=e,
+            )
             logger.error(f"[{self.get_agent_name()}] LLM call failed: {type(e).__name__}: {str(e)}")
             raise
 
@@ -1127,11 +1241,18 @@ Be honest - set goal_achieved=true ONLY if all criteria are satisfied.
                 continue
             seen_titles.add(title)
 
-            severity = finding_dict.get("severity", "medium")
-            if severity == "high" or severity == "critical":
+            description = finding_dict.get("description", "")
+            raw_severity = finding_dict.get("severity", "medium")
+
+            severity, category = classify_finding_severity(title, description)
+
+            if category in ("positive", "out_of_scope"):
+                continue
+
+            if severity == "critical" or raw_severity in ("critical", "high"):
                 finding_severity = "critical"
                 finding_confidence = "high"
-            elif severity == "medium":
+            elif severity == "high" or raw_severity == "medium":
                 finding_severity = "warning"
                 finding_confidence = "medium"
             else:
@@ -1146,7 +1267,7 @@ Be honest - set goal_achieved=true ONLY if all criteria are satisfied.
                 owner="security",
                 estimate="M",
                 evidence=json.dumps(finding_dict.get("evidence", [])),
-                risk=finding_dict.get("description", ""),
+                risk=description,
                 recommendation=finding_dict.get("recommendations", [""])[0]
                 if finding_dict.get("recommendations")
                 else "",
@@ -1161,13 +1282,16 @@ Be honest - set goal_achieved=true ONLY if all criteria are satisfied.
             "summary", f"Task completed in {self._iteration_count} iterations"
         )
 
+        critical_findings = [f for f in findings if f.severity == "critical"]
+        warning_findings = [f for f in findings if f.severity == "warning"]
+
         return ReviewOutput(
             agent=self.get_agent_name(),
             summary=f"Task {todo_id} complete. {self._iteration_count} iterations, {len(findings)} unique findings. {summary}",
             severity="critical"
-            if any(f.severity == "critical" for f in findings)
+            if critical_findings
             else "warning"
-            if findings
+            if warning_findings
             else "merge",
             scope=Scope(
                 relevant_files=self.get_relevant_file_patterns(),
@@ -1176,9 +1300,9 @@ Be honest - set goal_achieved=true ONLY if all criteria are satisfied.
             ),
             findings=findings,
             merge_gate=MergeGate(
-                decision="needs_changes" if findings else "approve",
-                must_fix=[f.title for f in findings if f.severity in ("critical", "warning")],
-                should_fix=[f.title for f in findings if f.severity == "blocking"],
+                decision="needs_changes" if (critical_findings or warning_findings) else "approve",
+                must_fix=[f.title for f in critical_findings],
+                should_fix=[f.title for f in warning_findings],
                 notes_for_coding_agent=[
                     f"Task {todo_id} completed in {self._iteration_count} iterations",
                     f"Total evidence collected: {len(self._accumulated_evidence)} items",

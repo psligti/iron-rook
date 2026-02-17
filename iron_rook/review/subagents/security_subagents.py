@@ -1,7 +1,7 @@
 """Security subagents for specialized security analysis.
 
 This module provides specialized security subagents that inherit from BaseSubagent
-and use the LoopFSM pattern for execution. Each subagent focuses on a specific
+and use the SimpleReviewAgentRunner for execution. Each subagent focuses on a specific
 security domain:
 - AuthSecuritySubagent: Authentication and authorization patterns
 - InjectionScannerSubagent: SQL, command, template injection patterns
@@ -15,6 +15,7 @@ import logging
 import asyncio
 
 from iron_rook.review.base import BaseReviewerAgent, ReviewContext
+from iron_rook.review.verifier import FindingsVerifier
 from iron_rook.review.contracts import (
     ReviewOutput,
     get_review_output_schema,
@@ -22,9 +23,6 @@ from iron_rook.review.contracts import (
     MergeGate,
     Finding,
 )
-from iron_rook.fsm.loop_fsm import LoopFSM
-from iron_rook.fsm.loop_state import LoopState
-from iron_rook.fsm.todo import Todo
 
 from dawn_kestrel.core.harness import SimpleReviewAgentRunner
 
@@ -34,12 +32,7 @@ logger = logging.getLogger(__name__)
 class BaseSubagent(BaseReviewerAgent):
     """Base class for all security subagents.
 
-    Provides FSM loop execution using LoopFSM with the following phases:
-    - INTAKE: Initial phase, gathering and validating inputs
-    - PLAN: Planning phase, determining execution strategy
-    - ACT: Execution phase, running planned actions
-    - SYNTHESIZE: Synthesis phase, combining and processing results
-    - DONE: Loop completed successfully
+    Provides review execution via SimpleReviewAgentRunner.
 
     Subclasses must implement:
     - get_agent_name(): Return the agent identifier
@@ -51,11 +44,11 @@ class BaseSubagent(BaseReviewerAgent):
 
     def __init__(
         self,
-        verifier: object | None = None,
+        verifier: FindingsVerifier | None = None,
         max_retries: int = 3,
         agent_runtime: object | None = None,
     ) -> None:
-        """Initialize base subagent with LoopFSM.
+        """Initialize base subagent.
 
         Args:
             verifier: FindingsVerifier strategy instance.
@@ -65,14 +58,7 @@ class BaseSubagent(BaseReviewerAgent):
         super().__init__(verifier=verifier, max_retries=max_retries, agent_runtime=agent_runtime)
 
     async def review(self, context: ReviewContext) -> ReviewOutput:
-        """Perform review using FSM loop execution.
-
-        Orchestrates the review using the LoopFSM pattern:
-        1. INTAKE: Validate context and inputs
-        2. PLAN: Determine analysis strategy
-        3. ACT: Execute security analysis
-        4. SYNTHESIZE: Combine findings into ReviewOutput
-        5. DONE: Return final ReviewOutput
+        """Perform security review.
 
         Args:
             context: ReviewContext containing changed files, diff, and metadata
@@ -80,50 +66,6 @@ class BaseSubagent(BaseReviewerAgent):
         Returns:
             ReviewOutput with findings, severity, and merge gate decision
         """
-        logger.info(f"[{self.__class__.__name__}] Starting FSM loop execution")
-
-        # Build context for FSM
-        fsm_context = {
-            "agent_name": self.get_agent_name(),
-            "changed_files": context.changed_files,
-            "diff": context.diff,
-            "repo_root": context.repo_root,
-            "base_ref": context.base_ref,
-            "head_ref": context.head_ref,
-            "pr_title": context.pr_title,
-            "pr_description": context.pr_description,
-        }
-
-        try:
-            # Execute FSM loop synchronously
-            # The LoopFSM run_loop() handles all transitions internally
-            self._fsm.run_loop(fsm_context)
-        except Exception as e:
-            logger.error(f"[{self.__class__.__name__}] FSM loop failed: {e}")
-            # Return a ReviewOutput indicating failure
-            return ReviewOutput(
-                agent=self.get_agent_name(),
-                summary=f"Security review failed: {str(e)}",
-                severity="critical",
-                scope=Scope(
-                    relevant_files=context.changed_files,
-                    ignored_files=[],
-                    reasoning="Review execution failed during FSM loop",
-                ),
-                findings=[],
-                merge_gate=MergeGate(
-                    decision="needs_changes",
-                    must_fix=[],
-                    should_fix=[],
-                    notes_for_coding_agent=[
-                        f"Review failed due to error: {str(e)}",
-                        "Please retry or investigate the error",
-                    ],
-                ),
-            )
-
-        # After FSM completes, generate ReviewOutput from findings
-        # For now, use the parent class method with SimpleReviewAgentRunner
         return await self._execute_review_with_runner(
             context,
             early_return_on_no_relevance=True,
@@ -133,14 +75,11 @@ class BaseSubagent(BaseReviewerAgent):
     def _execute_action_subagent(self) -> None:
         """Execute the action for the ACT phase.
 
-        This method is called by LoopFSM during the ACT phase.
-        Subclasses can override this to implement specific analysis logic.
+        This method is called by subclasses for specific analysis logic.
 
         Raises:
             RuntimeError: If action execution fails.
         """
-        # Base implementation does nothing
-        # Subclasses should override with specific analysis logic
         logger.debug(f"[{self.__class__.__name__}] _execute_action_subagent called")
 
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import List, Literal, Dict, Optional
+from typing import List, Literal, Dict, Optional, Any
 import pydantic as pd
 
 
@@ -56,6 +56,8 @@ class PriorityMergePolicy(MergePolicy):
         decision: Literal["approve", "needs_changes", "block", "approve_with_warnings"] = "approve"
 
         for result in results:
+            if not result:
+                continue
             must_fix.extend(result.merge_gate.must_fix)
             should_fix.extend(result.merge_gate.should_fix)
 
@@ -69,7 +71,7 @@ class PriorityMergePolicy(MergePolicy):
 
         if must_fix:
             has_blocking = any(
-                f.severity == "blocking" for result in results for f in result.findings
+                f.severity == "blocking" for result in results if result for f in result.findings
             )
             decision = "block" if has_blocking else "needs_changes"
         elif should_fix:
@@ -196,6 +198,7 @@ class ReviewOutput(pd.BaseModel):
     skips: List[Skip] = pd.Field(default_factory=list)
     findings: List[Finding] = pd.Field(default_factory=list)
     merge_gate: MergeGate
+    thinking_log: Optional[RunLog] = None
 
     model_config = pd.ConfigDict(extra="ignore")
 
@@ -208,7 +211,6 @@ class ReviewInputs(pd.BaseModel):
     pr_description: str = ""
     ticket_description: str = ""
     include_optional: bool = False
-    timeout_seconds: int = 300
 
     model_config = pd.ConfigDict(extra="ignore")
 
@@ -238,32 +240,24 @@ class OrchestratorOutput(pd.BaseModel):
 
 
 class IntakePhaseOutput(pd.BaseModel):
-    """Output model for INTAKE phase."""
-
     phase: Literal["intake"]
     data: "IntakePhaseData"
-    next_phase_request: Literal["plan_todos"]
+    next_phase_request: Literal["plan"]
 
 
 class IntakePhaseData(pd.BaseModel):
-    """Data model for INTAKE phase."""
-
     summary: str
     risk_hypotheses: List[str] = pd.Field(default_factory=list)
     questions: List[str] = pd.Field(default_factory=list)
 
 
-class PlanTodosPhaseOutput(pd.BaseModel):
-    """Output model for PLAN_TODOS phase."""
-
-    phase: Literal["plan_todos"]
-    data: "PlanTodosPhaseData"
-    next_phase_request: Literal["delegate"]
+class PlanPhaseOutput(pd.BaseModel):
+    phase: Literal["plan"]
+    data: "PlanPhaseData"
+    next_phase_request: Literal["act"]
 
 
 class SecurityTodo(pd.BaseModel):
-    """Security TODO item model."""
-
     id: str
     description: str
     priority: Literal["high", "medium", "low"]
@@ -272,9 +266,7 @@ class SecurityTodo(pd.BaseModel):
     evidence_required: List[str] = pd.Field(default_factory=list)
 
 
-class PlanTodosPhaseData(pd.BaseModel):
-    """Data model for PLAN_TODOS phase."""
-
+class PlanPhaseData(pd.BaseModel):
     todos: List[SecurityTodo] = pd.Field(default_factory=list)
     delegation_plan: Dict[str, str] = pd.Field(default_factory=dict)
     tools_considered: List[str] = pd.Field(default_factory=list)
@@ -282,80 +274,57 @@ class PlanTodosPhaseData(pd.BaseModel):
     why: str
 
 
-class SubagentRequest(pd.BaseModel):
-    """Subagent request model."""
-
-    todo_id: str
-    agent_type: str
-    scope: List[str] = pd.Field(default_factory=list)
-    instructions: str
+PlanTodosPhaseOutput = PlanPhaseOutput
+PlanTodosPhaseData = PlanPhaseData
 
 
-class DelegatePhaseOutput(pd.BaseModel):
-    """Output model for DELEGATE phase."""
+class ActPhaseOutput(pd.BaseModel):
+    """Output model for ACT phase."""
 
-    phase: Literal["delegate"]
-    data: "DelegatePhaseData"
-    next_phase_request: Literal["collect", "consolidate", "evaluate", "done"]
-
-
-class DelegatePhaseData(pd.BaseModel):
-    """Data model for DELEGATE phase."""
-
-    subagent_requests: List[SubagentRequest] = pd.Field(default_factory=list)
-    self_analysis_plan: List[str] = pd.Field(default_factory=list)
+    phase: Literal["act"]
+    data: "ActPhaseData"
+    next_phase_request: Literal["synthesize"]
 
 
-class CollectPhaseOutput(pd.BaseModel):
-    """Output model for COLLECT phase."""
+class ActPhaseData(pd.BaseModel):
+    """Data model for ACT phase."""
 
-    phase: Literal["collect"]
-    data: "CollectPhaseData"
-    next_phase_request: Literal["consolidate"]
-
-
-class TodoStatus(pd.BaseModel):
-    """TODO status model."""
-
-    todo_id: str
-    status: Literal["done", "blocked", "deferred"]
-    explanation: str
+    tool_results: Dict[str, str] = pd.Field(default_factory=dict)
+    findings_summary: List[str] = pd.Field(default_factory=list)
+    why: str
 
 
-class CollectPhaseData(pd.BaseModel):
-    """Data model for COLLECT phase."""
+class SynthesizePhaseOutput(pd.BaseModel):
+    """Output model for SYNTHESIZE phase."""
 
-    todo_status: List[TodoStatus] = pd.Field(default_factory=list)
-    issues_with_results: List[str] = pd.Field(default_factory=list)
-
-
-class ConsolidatePhaseOutput(pd.BaseModel):
-    """Output model for CONSOLIDATE phase."""
-
-    phase: Literal["consolidate"]
-    data: "ConsolidatePhaseData"
-    next_phase_request: Literal["evaluate"]
+    phase: Literal["synthesize"]
+    data: "SynthesizePhaseData"
+    next_phase_request: Literal["check"]
 
 
-class ConsolidateGates(pd.BaseModel):
-    """Consolidation gates model."""
+class SynthesizePhaseData(pd.BaseModel):
+    """Data model for SYNTHESIZE phase."""
 
-    all_todos_resolved: bool
-    evidence_present: bool
-    findings_categorized: bool
-    confidence_set: bool
+    findings: List[Dict[str, str]] = pd.Field(default_factory=list)
+    evidence_index: List[str] = pd.Field(default_factory=list)
+    why: str
 
 
-class ConsolidatePhaseData(pd.BaseModel):
-    """Data model for CONSOLIDATE phase."""
+class CheckPhaseOutput(pd.BaseModel):
+    """Output model for CHECK phase."""
 
-    gates: ConsolidateGates
-    missing_information: List[str] = pd.Field(default_factory=list)
+    phase: Literal["check"]
+    data: "CheckPhaseData"
+    next_phase_request: Literal["done"]
+
+
+class CheckPhaseData(pd.BaseModel):
+    gates: Dict[str, bool] = pd.Field(default_factory=dict)
+    confidence: float = pd.Field(ge=0.0, le=1.0)
+    why: str
 
 
 class EvaluatePhaseOutput(pd.BaseModel):
-    """Output model for EVALUATE phase."""
-
     phase: Literal["evaluate"]
     data: "EvaluatePhaseData"
     next_phase_request: Literal["done"]
@@ -394,7 +363,7 @@ def get_phase_output_schema(phase: str) -> str:
     """Return JSON schema for the specified phase output as a string for inclusion in prompts.
 
     Args:
-        phase: Phase name (e.g., "intake", "plan_todos", "delegate", "collect", "consolidate", "evaluate")
+        phase: Phase name (e.g., "intake", "plan_todos", "act", "synthesize", "check")
 
     Returns:
         JSON schema string with explicit type information
@@ -404,10 +373,10 @@ def get_phase_output_schema(phase: str) -> str:
     """
     phase_schemas = {
         "intake": IntakePhaseOutput,
-        "plan_todos": PlanTodosPhaseOutput,
-        "delegate": DelegatePhaseOutput,
-        "collect": CollectPhaseOutput,
-        "consolidate": ConsolidatePhaseOutput,
+        "plan": PlanPhaseOutput,
+        "act": ActPhaseOutput,
+        "synthesize": SynthesizePhaseOutput,
+        "check": CheckPhaseOutput,
         "evaluate": EvaluatePhaseOutput,
     }
 

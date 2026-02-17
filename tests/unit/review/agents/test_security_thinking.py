@@ -10,7 +10,14 @@ import pydantic as pd
 
 from iron_rook.review.agents.security import SecurityReviewer
 from iron_rook.review.base import ReviewContext
-from iron_rook.review.contracts import ThinkingStep, ThinkingFrame, RunLog
+from iron_rook.review.contracts import (
+    ThinkingStep,
+    ThinkingFrame,
+    RunLog,
+    ReviewOutput,
+    Scope,
+    MergeGate,
+)
 from iron_rook.review.security_phase_logger import SecurityPhaseLogger
 
 
@@ -29,7 +36,7 @@ class TestExtractThinkingFromResponse:
     "summary": "test",
     "risk_hypotheses": []
   },
-  "next_phase_request": "plan_todos"
+  "next_phase_request": "plan"
 }"""
         thinking = reviewer._extract_thinking_from_response(response_text)
         assert thinking == "I need to analyze the authentication flow..."
@@ -46,7 +53,7 @@ class TestExtractThinkingFromResponse:
     "summary": "test",
     "risk_hypotheses": []
   },
-  "next_phase_request": "plan_todos"
+  "next_phase_request": "plan"
 }"""
         thinking = reviewer._extract_thinking_from_response(response_text)
         assert thinking == "Checking for SQL injection patterns..."
@@ -63,7 +70,7 @@ class TestExtractThinkingFromResponse:
     "summary": "test",
     "risk_hypotheses": []
   },
-  "next_phase_request": "plan_todos"
+  "next_phase_request": "plan"
 }
 ```"""
         thinking = reviewer._extract_thinking_from_response(response_text)
@@ -81,7 +88,7 @@ class TestExtractThinkingFromResponse:
     "summary": "test",
     "risk_hypotheses": []
   },
-  "next_phase_request": "plan_todos"
+  "next_phase_request": "plan"
 }
 ```"""
         thinking = reviewer._extract_thinking_from_response(response_text)
@@ -97,7 +104,7 @@ class TestExtractThinkingFromResponse:
     "summary": "test",
     "risk_hypotheses": []
   },
-  "next_phase_request": "plan_todos"
+  "next_phase_request": "plan"
 }"""
         thinking = reviewer._extract_thinking_from_response(response_text)
         assert thinking == ""
@@ -113,7 +120,7 @@ class TestExtractThinkingFromResponse:
     "summary": "test",
     "risk_hypotheses": []
   },
-  "next_phase_request": "plan_todos"
+  "next_phase_request": "plan"
 }"""
         thinking = reviewer._extract_thinking_from_response(response_text)
         assert thinking == ""
@@ -145,7 +152,7 @@ class TestIntakePhaseThinking:
     "risk_hypotheses": [],
     "questions": []
   },
-  "next_phase_request": "plan_todos"
+  "next_phase_request": "plan"
 }"""
 
         # Mock context
@@ -183,7 +190,7 @@ class TestIntakePhaseThinking:
     "risk_hypotheses": [],
     "questions": []
   },
-  "next_phase_request": "plan_todos"
+  "next_phase_request": "plan"
 }"""
 
         # Mock context
@@ -212,24 +219,20 @@ class TestPlanTodosPhaseThinking:
 
     @patch.object(SecurityReviewer, "_execute_llm")
     @pytest.mark.asyncio
-    async def test_plan_todos_phase_logs_thinking_from_response(self, mock_execute_llm):
-        """Verify PLAN_TODOS phase logs LLM thinking from response."""
+    async def test_plan_phase_logs_thinking_from_response(self, mock_execute_llm):
         reviewer = SecurityReviewer()
 
-        # Set intake output for context
         reviewer._phase_outputs["intake"] = {"data": {"risk_hypotheses": ["test1", "test2"]}}
 
-        # Mock LLM response with thinking
         mock_execute_llm.return_value = """{
   "thinking": "Creating TODOs for authentication and injection risks",
-  "phase": "plan_todos",
+  "phase": "plan",
   "data": {
     "todos": []
   },
-  "next_phase_request": "delegate"
+  "next_phase_request": "act"
 }"""
 
-        # Mock context
         context = ReviewContext(
             changed_files=["src/test.py"],
             diff="test diff",
@@ -238,39 +241,39 @@ class TestPlanTodosPhaseThinking:
             head_ref="HEAD",
         )
 
-        # Mock phase logger
         reviewer._phase_logger = Mock()
 
-        # Run plan_todos phase
-        await reviewer._run_plan_todos(context)
+        await reviewer._run_plan(context)
 
-        # Verify thinking was logged (extracted from LLM response)
         calls = [str(call) for call in reviewer._phase_logger.log_thinking.call_args_list]
-        # Should have the LLM thinking logged
         assert any(
             "Creating TODOs for authentication and injection risks" in call for call in calls
         )
 
 
-class TestDelegatePhaseThinking:
-    """Test DELEGATE phase thinking logging."""
+class TestActPhaseThinking:
+    """Test ACT phase thinking logging."""
 
-    @patch.object(SecurityReviewer, "_execute_llm")
     @pytest.mark.asyncio
-    async def test_delegate_phase_logs_thinking_from_response(self, mock_execute_llm):
-        """Verify DELEGATE phase logs LLM thinking from response."""
+    async def test_act_phase_logs_thinking_from_response(self):
         reviewer = SecurityReviewer()
 
-        # Mock runner response with thinking
-
-        mock_execute_llm.return_value = """{
-  "thinking": "Delegating auth TODOs to auth_security subagent",
-  "phase": "delegate",
-  "data": {
-    "subagent_requests": []
-  },
-  "next_phase_request": "collect"
-}"""
+        reviewer._phase_outputs = {
+            "plan": {
+                "data": {
+                    "todos": [
+                        {
+                            "id": "SEC-001",
+                            "description": "Test todo",
+                            "priority": "high",
+                            "risk_category": "test",
+                            "acceptance_criteria": "Test criteria",
+                            "evidence_required": [],
+                        }
+                    ]
+                }
+            }
+        }
 
         # Mock context
         context = ReviewContext(
@@ -284,77 +287,53 @@ class TestDelegatePhaseThinking:
         # Mock phase logger
         reviewer._phase_logger = Mock()
 
-        # Run delegate phase
-        await reviewer._run_delegate(context)
+        with patch("iron_rook.review.agents.security.DelegateTodoSkill") as MockSkill:
+            mock_skill_instance = Mock()
+            mock_skill_instance.review = AsyncMock()
+            mock_skill_instance.review.return_value = ReviewOutput(
+                agent="delegate_todo",
+                summary="Test delegation complete",
+                severity="merge",
+                scope=Scope(
+                    relevant_files=["src/test.py"],
+                    reasoning="Test",
+                ),
+                findings=[],
+                merge_gate=MergeGate(
+                    decision="approve",
+                    must_fix=[],
+                    should_fix=[],
+                    notes_for_coding_agent=[],
+                ),
+            )
+            MockSkill.return_value = mock_skill_instance
 
-        # Verify thinking was logged (extracted from LLM response)
+            # Run act phase
+            await reviewer._run_act(context)
+
         calls = [str(call) for call in reviewer._phase_logger.log_thinking.call_args_list]
-        # Should have the LLM thinking logged
-        assert any("Delegating auth TODOs to auth_security subagent" in call for call in calls)
+        assert any("ACT" in call for call in calls) or any("act" in call for call in calls)
 
 
-class TestCollectPhaseThinking:
-    """Test COLLECT phase thinking logging."""
+class TestSynthesizePhaseThinking:
+    """Test SYNTHESIZE phase thinking logging."""
 
     @patch.object(SecurityReviewer, "_execute_llm")
     @pytest.mark.asyncio
-    async def test_collect_phase_logs_thinking_from_response(self, mock_execute_llm):
-        """Verify COLLECT phase logs LLM thinking from response."""
+    async def test_synthesize_phase_logs_thinking_from_response(self, mock_execute_llm):
+        """Verify SYNTHESIZE phase logs LLM thinking from response."""
         reviewer = SecurityReviewer()
 
-        # Mock runner response with thinking
-
         mock_execute_llm.return_value = """{
-  "thinking": "Validating all subagent results and marking TODOs complete",
-  "phase": "collect",
+  "thinking": "Validating results and merging findings from all subagents",
+  "phase": "synthesize",
   "data": {
-    "todo_status": []
+    "todo_status": [],
+    "gates": {}
   },
-  "next_phase_request": "consolidate"
-}"""
-
-        # Mock context
-        context = ReviewContext(
-            changed_files=["src/test.py"],
-            diff="test diff",
-            repo_root="/repo",
-            base_ref="main",
-            head_ref="HEAD",
-        )
-
-        # Mock phase logger
-        reviewer._phase_logger = Mock()
-
-        # Run collect phase
-        await reviewer._run_collect(context)
-
-        # Verify thinking was logged (extracted from LLM response)
-        calls = [str(call) for call in reviewer._phase_logger.log_thinking.call_args_list]
-        # Should have the LLM thinking logged
-        assert any(
-            "Validating all subagent results and marking TODOs complete" in call for call in calls
-        )
-
-
-class TestConsolidatePhaseThinking:
-    """Test CONSOLIDATE phase thinking logging."""
-
-    @patch.object(SecurityReviewer, "_execute_llm")
-    @pytest.mark.asyncio
-    async def test_consolidate_phase_logs_thinking_from_response(self, mock_execute_llm):
-        """Verify CONSOLIDATE phase logs LLM thinking from response."""
-        reviewer = SecurityReviewer()
-
-        # Mock runner response with thinking
-
-        mock_execute_llm.return_value = """{
-  "thinking": "Merging findings from all subagents and de-duplicating",
-  "phase": "consolidate",
-  "data": {},
   "next_phase_request": "evaluate"
 }"""
 
-        # Mock context
         context = ReviewContext(
             changed_files=["src/test.py"],
             diff="test diff",
@@ -363,17 +342,13 @@ class TestConsolidatePhaseThinking:
             head_ref="HEAD",
         )
 
-        # Mock phase logger
         reviewer._phase_logger = Mock()
 
-        # Run consolidate phase
-        await reviewer._run_consolidate(context)
+        await reviewer._run_synthesize(context)
 
-        # Verify thinking was logged (extracted from LLM response)
         calls = [str(call) for call in reviewer._phase_logger.log_thinking.call_args_list]
-        # Should have the LLM thinking logged
         assert any(
-            "Merging findings from all subagents and de-duplicating" in call for call in calls
+            "Validating results and merging findings from all subagents" in call for call in calls
         )
 
 
@@ -440,7 +415,7 @@ class TestThinkingNotLoggedWhenEmpty:
     "risk_hypotheses": [],
     "questions": []
   },
-  "next_phase_request": "plan_todos"
+  "next_phase_request": "plan"
 }"""
 
         # Mock context
@@ -527,14 +502,14 @@ class TestThinkingModels:
                 ThinkingStep(kind="transition", why="Start analysis", evidence=["PR has 3 files"]),
                 ThinkingStep(kind="tool", why="Run security scan", next="scan_complete"),
             ],
-            decision="proceed to plan_todos",
+            decision="proceed to plan",
         )
         assert frame.state == "intake"
         assert len(frame.goals) == 2
         assert len(frame.checks) == 2
         assert len(frame.risks) == 2
         assert len(frame.steps) == 2
-        assert frame.decision == "proceed to plan_todos"
+        assert frame.decision == "proceed to plan"
 
     def test_thinking_frame_timestamp(self):
         """Verify ThinkingFrame ts field generates ISO-8601 timestamp with Z suffix."""
@@ -551,7 +526,7 @@ class TestThinkingModels:
     def test_thinking_frame_default_lists(self):
         """Verify ThinkingFrame list fields use default_factory correctly."""
         frame1 = ThinkingFrame(state="intake", decision="proceed")
-        frame2 = ThinkingFrame(state="plan_todos", decision="delegate")
+        frame2 = ThinkingFrame(state="plan", decision="act")
         # Modify list in frame1
         frame1.goals.append("shared goal")
         frame1.checks.append("shared check")
@@ -573,17 +548,17 @@ class TestThinkingModels:
         frame1 = ThinkingFrame(
             state="intake",
             goals=["Analyze PR"],
-            decision="proceed to plan_todos",
+            decision="proceed to plan",
         )
         frame2 = ThinkingFrame(
-            state="plan_todos",
+            state="plan",
             goals=["Create TODOs"],
-            decision="delegate",
+            decision="act",
         )
         log = RunLog(frames=[frame1, frame2])
         assert len(log.frames) == 2
         assert log.frames[0].state == "intake"
-        assert log.frames[1].state == "plan_todos"
+        assert log.frames[1].state == "plan"
 
     def test_run_log_add_method(self):
         """Verify RunLog add() method correctly appends frames."""
@@ -591,19 +566,19 @@ class TestThinkingModels:
         frame1 = ThinkingFrame(
             state="intake",
             goals=["Analyze PR"],
-            decision="proceed to plan_todos",
+            decision="proceed to plan",
         )
         frame2 = ThinkingFrame(
-            state="plan_todos",
+            state="plan",
             goals=["Create TODOs"],
-            decision="delegate",
+            decision="act",
         )
         log.add(frame1)
         assert len(log.frames) == 1
         assert log.frames[0].state == "intake"
         log.add(frame2)
         assert len(log.frames) == 2
-        assert log.frames[1].state == "plan_todos"
+        assert log.frames[1].state == "plan"
 
     def test_run_log_default_frames(self):
         """Verify RunLog frames field uses list default_factory correctly."""
@@ -650,11 +625,11 @@ class TestPhaseLoggerFrame:
 
         logger = SecurityPhaseLogger(enable_color=True)
         frame = ThinkingFrame(
-            state="plan_todos",
+            state="plan",
             goals=["Create security TODOs", "Identify high-risk areas"],
             checks=["Verify SQL injection patterns", "Check authentication flows"],
             risks=["Incomplete validation", "Weak session management"],
-            decision="delegate",
+            decision="act",
         )
 
         # Mock console.print to capture calls
