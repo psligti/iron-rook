@@ -1,0 +1,23 @@
+{
+  "security-sql-injection": true,
+  "security-hardcoded-secrets": true,
+  "security-xss": true,
+  "security-auth-bypass": true,
+  "arch-boundary-violation": true,
+  "arch-circular-deps": true,
+  "arch-god-object": true,
+  "doc-missing-docs": true,
+  "doc-outdated-readme": true,
+  "test-missing-tests": true,
+  "test-brittle-tests": true,
+  "lint-style-violations": true,
+  "lint-type-hints": true,
+  "perf-n2-complexity": true,
+  "perf-io-amplification": true,
+  "deps-vulnerable-deps": true,
+  "deps-license-issues": true,
+  "telemetry-missing-metrics": true,
+  "req-missing-implementation": true,
+  "diff-risk-changes": true,
+  "changelog-missing": true
+}

@@ -23,8 +23,6 @@ def log_verbose_subagent_info(subagents: list) -> None:
     Args:
         subagents: List of subagent instances
     """
-    import logging
-
     logger = logging.getLogger(__name__)
 
     if not logger.isEnabledFor(logging.DEBUG):
@@ -71,8 +69,6 @@ def log_verbose_result_details(result) -> None:
     Args:
         result: ReviewOutput object
     """
-    import logging
-
     logger = logging.getLogger(__name__)
 
     if not logger.isEnabledFor(logging.DEBUG):
@@ -163,7 +159,6 @@ async def log_verbose_todos(repo_root: str) -> None:
     Args:
         repo_root: Repository root directory
     """
-    import logging
     from pathlib import Path
 
     logger = logging.getLogger(__name__)
@@ -351,6 +346,61 @@ def format_terminal_error(agent_name: str, error_msg: str) -> None:
     is_flag=True,
     help="Enable verbose logging to see detailed progress",
 )
+@click.option(
+    "--rate-capacity",
+    type=int,
+    default=1,
+    help="Rate limiter capacity (max concurrent requests). Default: 1 (conservative for GLM)",
+    envvar="IRON_ROOK_RATE_CAPACITY",
+)
+@click.option(
+    "--rate-refill",
+    type=float,
+    default=0.2,
+    help="Rate limiter refill rate (requests per second). Default: 0.2 (~1 req/5s)",
+    envvar="IRON_ROOK_RATE_REFILL",
+)
+@click.option(
+    "--no-rate-limit",
+    is_flag=True,
+    help="Disable rate limiting entirely (use with caution)",
+    envvar="IRON_ROOK_NO_RATE_LIMIT",
+)
+@click.option(
+    "--sequential",
+    is_flag=True,
+    help="Run agents sequentially instead of parallel (recommended for strict rate limits)",
+    envvar="IRON_ROOK_SEQUENTIAL",
+)
+@click.option(
+    "--max-retries",
+    type=int,
+    default=3,
+    help="Max retries on rate limit errors (429). Default: 3",
+    envvar="IRON_ROOK_MAX_RETRIES",
+)
+@click.option(
+    "--resume",
+    is_flag=True,
+    help="Resume from checkpoint if available (skip completed agents)",
+)
+@click.option(
+    "--max-tokens",
+    type=int,
+    default=500000,
+    help="Max total tokens per review. Default: 500000",
+)
+@click.option(
+    "--max-time",
+    type=int,
+    default=1800,
+    help="Max wall time in seconds. Default: 1800 (30 min)",
+)
+@click.option(
+    "--metrics-report",
+    is_flag=True,
+    help="Include token metrics in output",
+)
 def review(
     agent: str | None,
     repo_root: Path,
@@ -358,6 +408,15 @@ def review(
     head_ref: str,
     output: Literal["json", "markdown", "terminal"],
     verbose: bool,
+    rate_capacity: int,
+    rate_refill: float,
+    no_rate_limit: bool,
+    sequential: bool,
+    max_retries: int,
+    resume: bool,
+    max_tokens: int,
+    max_time: int,
+    metrics_report: bool,
 ) -> None:
     """Run PR review on a git repository.
 
@@ -374,11 +433,28 @@ def review(
     """
 
     async def run_review() -> None:
-        from iron_rook.review.contracts import ReviewInputs
+        from iron_rook.review.contracts import ReviewInputs, BudgetConfig
         from iron_rook.review.orchestrator import PRReviewOrchestrator
         from iron_rook.review.registry import ReviewerRegistry
+        from iron_rook.review.utils.checkpoint import CheckpointManager
+        from iron_rook.review.utils.git import get_changed_files, get_diff
 
         setup_logging(verbose)
+        logger = logging.getLogger(__name__)
+
+        if not no_rate_limit:
+            from dawn_kestrel.llm.client import configure_global_rate_limiter
+
+            configure_global_rate_limiter(
+                capacity=rate_capacity,
+                refill_rate=rate_refill,
+                window_seconds=1,
+            )
+            logger.info(
+                f"Rate limiter configured: capacity={rate_capacity}, refill_rate={rate_refill}/s"
+            )
+        else:
+            logger.warning("Rate limiting DISABLED - use with caution!")
 
         available_agents = set(ReviewerRegistry.get_all_names())
         if agent and agent not in available_agents:
@@ -390,13 +466,57 @@ def review(
             console.print(f"[cyan]Running only '{agent}' agent...[/cyan]")
         else:
             subagents = get_subagents()
-        console.print(f"[cyan]Running all {len(subagents)} agents...[/cyan]")
+
+        # Handle resume from checkpoint
+        skip_agents: set[str] = set()
+        inputs_hash = ""
+
+        if resume:
+            # Compute inputs hash to find matching checkpoint
+            all_changed_files = await get_changed_files(str(repo_root), base_ref, head_ref)
+            diff = await get_diff(str(repo_root), base_ref, head_ref)
+            checkpoint_manager = CheckpointManager(repo_root)
+            inputs_hash = checkpoint_manager.compute_inputs_hash(all_changed_files, diff)
+
+            if checkpoint_manager.exists(inputs_hash):
+                checkpoint = checkpoint_manager.load(inputs_hash)
+                if checkpoint and checkpoint.completed_agents:
+                    skip_agents = set(checkpoint.completed_agents.keys())
+                    console.print(
+                        f"[green]▶ Found checkpoint: {len(skip_agents)} agents complete[/green]"
+                    )
+                    console.print(f"[dim]Skipping: {', '.join(sorted(skip_agents))}[/dim]")
+            else:
+                console.print("[dim]No checkpoint found, starting fresh[/dim]")
+
+        # Filter out completed agents if resuming
+        if skip_agents:
+            subagents = [a for a in subagents if a.get_agent_name() not in skip_agents]
+            if not subagents:
+                console.print("[green]All agents already completed in checkpoint![/green]")
+                return
+
+        execution_mode = "sequential" if sequential else "parallel"
+        console.print(f"[cyan]Running {len(subagents)} agents ({execution_mode})...[/cyan]")
 
         if verbose:
             log_verbose_subagent_info(subagents)
 
+        # Create budget config if limits specified
+        budget_config: BudgetConfig | None = None
+        if max_tokens != 500000 or max_time != 1800:
+            budget_config = BudgetConfig(
+                max_total_tokens=max_tokens,
+                max_wall_time_seconds=max_time,
+            )
+
         orchestrator = PRReviewOrchestrator(
             subagents=subagents,
+            sequential=sequential,
+            max_retries=max_retries,
+            budget_config=budget_config,
+            enable_checkpoints=resume,
+            enable_metrics=metrics_report,
         )
 
         inputs = ReviewInputs(
@@ -436,8 +556,6 @@ def review(
         console.print()
 
         if verbose:
-            import logging
-
             logger = logging.getLogger(__name__)
             logger.info("")
             logger.info("[VERBOSE] ===== FINAL SUMMARY =====")
@@ -457,7 +575,7 @@ def review(
             logger.info("")
 
         if output == "json":
-            console.print(result.model_dump_json(indent=2))
+            print(result.model_dump_json(indent=2))
         elif output == "markdown":
             console.print(result_to_markdown(result))
         elif output == "terminal":

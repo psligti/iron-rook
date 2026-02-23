@@ -28,6 +28,7 @@ from iron_rook.review.contracts import (
     Scope,
     Skip,
     get_review_output_schema,
+    get_phase_output_schema,
 )
 from iron_rook.review.security_phase_logger import SecurityPhaseLogger
 
@@ -260,7 +261,7 @@ class UnitTestsReviewer(BaseReviewerAgent):
 
 You are in the {phase} phase of the 5-phase unit tests review FSM.
 
-{get_review_output_schema()}
+{get_phase_output_schema(phase)}
 
 Your agent name is "unit_tests".
 
@@ -575,6 +576,7 @@ Output JSON format:
                 should_fix=actions.get("suggested", []),
                 notes_for_coding_agent=[f"Review {len(findings)} test findings"],
             ),
+            thinking_log=self._thinking_log,
         )
 
     def _build_error_review_output(
@@ -603,6 +605,7 @@ Output JSON format:
                 should_fix=[],
                 notes_for_coding_agent=[f"Unit tests review failed: {error_message}"],
             ),
+            thinking_log=self._thinking_log,
         )
 
     def get_system_prompt(self) -> str:

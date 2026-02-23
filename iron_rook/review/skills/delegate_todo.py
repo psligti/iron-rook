@@ -98,6 +98,18 @@ class DelegateTodoSkill(BaseReviewerAgent):
         """
         return ["read", "grep", "file"]
 
+    def prefers_direct_review(self) -> bool:
+        """Check if agent prefers to use its own review method.
+
+        DelegateTodoSkill has its own internal LLM orchestration that
+        outputs DELEGATE phase format, not ReviewOutput format. It must
+        run directly to avoid SDK parsing failures.
+
+        Returns:
+            True - always use direct review to avoid SDK path
+        """
+        return True
+
     def get_system_prompt(self) -> str:
         """Get system prompt for this skill.
 

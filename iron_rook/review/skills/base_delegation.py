@@ -114,7 +114,7 @@ class BaseDelegationSkill(BaseReviewerAgent):
         self,
         requests: List[Dict[str, Any]],
         context: ReviewContext,
-        max_concurrency: int = 4,
+        max_concurrency: int = 2,
     ) -> List[Dict[str, Any]]:
         """Execute subagents concurrently with error handling.
 

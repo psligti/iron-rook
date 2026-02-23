@@ -30,6 +30,38 @@ class AgentState(Enum):
     FAILED = "failed"
 
 
+class CircuitState(str, Enum):
+    """Circuit breaker states for resilience patterns.
+
+    States represent the current condition of a circuit breaker:
+    - CLOSED: Normal operation, requests flow through
+    - OPEN: Circuit tripped, requests are blocked
+    - HALF_OPEN: Testing if service recovered, limited requests allowed
+    """
+
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+
+class CircuitBreakerConfig(pd.BaseModel):
+    """Configuration for circuit breaker behavior.
+
+    Attributes:
+        failure_threshold: Number of failures before opening circuit
+        success_threshold: Number of successes in half-open to close circuit
+        reset_timeout_seconds: Time to wait before attempting reset
+        window_seconds: Time window for counting failures
+    """
+
+    failure_threshold: int = 10
+    success_threshold: int = 3
+    reset_timeout_seconds: float = 300.0
+    window_seconds: float = 300.0
+
+    model_config = pd.ConfigDict(extra="ignore")
+
+
 class MergePolicy(ABC):
     """Interface for merge decision policies.
 
@@ -246,6 +278,48 @@ class ToolPlan(pd.BaseModel):
     model_config = pd.ConfigDict(extra="ignore")
 
 
+class TokenMetrics(pd.BaseModel):
+    """Token usage metrics for an agent or phase.
+
+    Tracks cumulative token counts, API calls, findings generated,
+    and timing information for efficiency analysis.
+    """
+
+    total_tokens: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    call_count: int = 0
+    findings_yielded: int = 0
+    start_time: Optional[float] = None
+    end_time: Optional[float] = None
+
+    @pd.computed_field  # type: ignore[misc]
+    @property
+    def findings_per_1k_tokens(self) -> float:
+        """Calculate findings efficiency: findings per 1000 tokens."""
+        if self.total_tokens > 0:
+            return self.findings_yielded / (self.total_tokens / 1000)
+        return 0.0
+
+    model_config = pd.ConfigDict(extra="ignore")
+
+
+class TokenReport(pd.BaseModel):
+    """Aggregated token usage report across agents and phases.
+
+    Provides breakdown by agent, by phase, and total metrics
+    along with efficiency flags for monitoring.
+    """
+
+    by_agent: Dict[str, TokenMetrics] = pd.Field(default_factory=dict)
+    by_phase: Dict[str, TokenMetrics] = pd.Field(default_factory=dict)
+    total: TokenMetrics = pd.Field(default_factory=TokenMetrics)
+    efficiency_flags: List[str] = pd.Field(default_factory=list)
+    generated_at: str = ""
+
+    model_config = pd.ConfigDict(extra="ignore")
+
+
 class OrchestratorOutput(pd.BaseModel):
     merge_decision: MergeGate
     findings: List[Finding] = pd.Field(default_factory=list)
@@ -253,6 +327,8 @@ class OrchestratorOutput(pd.BaseModel):
     subagent_results: List[ReviewOutput] = pd.Field(default_factory=list)
     summary: str = ""
     total_findings: int = 0
+    token_metrics: Optional[TokenReport] = None
+    budget_snapshot: Optional[BudgetSnapshot] = None
 
     model_config = pd.ConfigDict(extra="ignore")
 
@@ -380,6 +456,93 @@ class EvaluatePhaseData(pd.BaseModel):
     actions: Dict[str, List[str]] = pd.Field(default_factory=dict)
     confidence: float = pd.Field(ge=0.0, le=1.0)
     missing_information: List[str] = pd.Field(default_factory=list)
+
+
+# ============================================================================
+# Budget Control Models
+# ============================================================================
+
+
+class BudgetConfig(pd.BaseModel):
+    """Configuration for budget limits during review execution.
+
+    Defines the resource budgets for agent execution, including token limits,
+    time limits, and retry thresholds.
+    """
+
+    max_total_tokens: int = 500_000
+    max_wall_time_seconds: int = 1800
+    max_retries_per_agent: int = 3
+    max_retries_per_phase: int = 2
+    max_agent_tokens: int = 50_000
+    warning_thresholds: List[float] = pd.Field(default_factory=lambda: [0.5, 0.75, 0.9])
+
+    model_config = pd.ConfigDict(extra="ignore")
+
+
+class BudgetSnapshot(pd.BaseModel):
+    """Snapshot of current budget usage.
+
+    Tracks resource consumption during review execution, including tokens
+    used, time elapsed, and warning threshold status.
+    """
+
+    tokens_used: int = 0
+    tokens_remaining: int = 500_000
+    time_elapsed_seconds: float = 0.0
+    time_remaining_seconds: float = 1800.0
+    last_warning_threshold: Optional[float] = None
+
+    model_config = pd.ConfigDict(extra="ignore")
+
+    @pd.computed_field
+    @property
+    def percent_used(self) -> float:
+        """Calculate percentage of budget used.
+
+        Returns tokens_used / (tokens_used + tokens_remaining) if total > 0,
+        else 0.0.
+        """
+        total = self.tokens_used + self.tokens_remaining
+        if total > 0:
+            return self.tokens_used / total
+        return 0.0
+
+
+class CheckpointData(pd.BaseModel):
+    """Checkpoint data for recovery and resume support.
+
+    Captures the full state of a review execution to enable recovery
+    from interruptions or failures. Used by checkpoint manager to
+    persist and restore review progress.
+
+    Attributes:
+        version: Schema version for future migration support
+        trace_id: Unique identifier for the review run
+        timestamp: ISO format timestamp when checkpoint was created
+        repo_root: Root directory of the repository being reviewed
+        base_ref: Base branch reference
+        head_ref: Head branch reference
+        inputs_hash: Hash of changed_files + diff for validation
+        completed_agents: Map of agent_name -> ReviewOutput for completed agents
+        failed_agents: List of agents that failed execution
+        current_agent: Currently executing agent if any
+        budget_snapshot: Current budget usage snapshot
+    """
+
+    version: str = "1.0"
+    trace_id: str = ""
+    timestamp: str = ""
+    repo_root: str = ""
+    base_ref: str = ""
+    head_ref: str = ""
+    inputs_hash: str = ""
+    completed_agents: Dict[str, Any] = pd.Field(default_factory=dict)
+    failed_agents: List[str] = pd.Field(default_factory=list)
+    current_agent: Optional[str] = None
+    budget_snapshot: Optional[BudgetSnapshot] = None
+
+    model_config = pd.ConfigDict(extra="ignore")
 
 
 def get_phase_output_schema(phase: str) -> str:

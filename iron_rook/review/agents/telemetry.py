@@ -29,6 +29,7 @@ from iron_rook.review.contracts import (
     Scope,
     Skip,
     get_review_output_schema,
+    get_phase_output_schema,
 )
 from iron_rook.review.security_phase_logger import SecurityPhaseLogger
 
@@ -197,12 +198,16 @@ class TelemetryMetricsReviewer(BaseReviewerAgent):
         user_message = self._build_intake_message(context)
         response_text = await self._execute_llm(system_prompt, user_message)
         output = self._parse_phase_response(response_text, "intake")
-        self._phase_logger.log_thinking("INTAKE", "INTAKE analysis complete, preparing to plan todos")
+        self._phase_logger.log_thinking(
+            "INTAKE", "INTAKE analysis complete, preparing to plan todos"
+        )
         return output
 
     async def _run_plan(self, context: ReviewContext) -> Dict[str, Any]:
         """Run PLAN phase: create structured telemetry TODOs."""
-        self._phase_logger.log_thinking("PLAN", "Creating structured telemetry TODOs with priorities")
+        self._phase_logger.log_thinking(
+            "PLAN", "Creating structured telemetry TODOs with priorities"
+        )
         system_prompt = self._get_phase_prompt("plan")
         user_message = self._build_plan_message(context)
         response_text = await self._execute_llm(system_prompt, user_message)
@@ -252,24 +257,32 @@ class TelemetryMetricsReviewer(BaseReviewerAgent):
 
     async def _run_synthesize(self, context: ReviewContext) -> Dict[str, Any]:
         """Run SYNTHESIZE phase: aggregate and validate subagent results."""
-        self._phase_logger.log_thinking("SYNTHESIZE", "Aggregating and validating telemetry findings from ACT")
+        self._phase_logger.log_thinking(
+            "SYNTHESIZE", "Aggregating and validating telemetry findings from ACT"
+        )
 
         act_output = self._phase_outputs.get("act", {})
         is_early_exit = act_output.get("next_phase_request") == "done"
 
         if is_early_exit:
-            self._phase_logger.log_thinking("SYNTHESIZE", "Early-exit detected (act returned done), running minimal synthesis")
+            self._phase_logger.log_thinking(
+                "SYNTHESIZE", "Early-exit detected (act returned done), running minimal synthesis"
+            )
 
         system_prompt = self._get_phase_prompt("synthesize")
         user_message = self._build_synthesize_message(context)
         response_text = await self._execute_llm(system_prompt, user_message)
         output = self._parse_phase_response(response_text, "synthesize")
-        self._phase_logger.log_thinking("SYNTHESIZE", "SYNTHESIZE complete, preparing for CHECK phase")
+        self._phase_logger.log_thinking(
+            "SYNTHESIZE", "SYNTHESIZE complete, preparing for CHECK phase"
+        )
         return output
 
     async def _run_check(self, context: ReviewContext) -> Dict[str, Any]:
         """Run CHECK phase: assess severity and generate final report."""
-        self._phase_logger.log_thinking("CHECK", "Assessing findings severity and generating final telemetry report")
+        self._phase_logger.log_thinking(
+            "CHECK", "Assessing findings severity and generating final telemetry report"
+        )
         system_prompt = self._get_phase_prompt("check")
         user_message = self._build_check_message(context)
         response_text = await self._execute_llm(system_prompt, user_message)
@@ -283,7 +296,7 @@ class TelemetryMetricsReviewer(BaseReviewerAgent):
 
 You are in the {phase} phase of the 5-phase telemetry review FSM.
 
-{get_review_output_schema()}
+{get_phase_output_schema(phase)}
 
 Your agent name is "telemetry".
 
@@ -563,7 +576,9 @@ Output JSON format:
                     )
                 )
 
-        critical_high = findings_by_severity.get("critical", []) + findings_by_severity.get("high", [])
+        critical_high = findings_by_severity.get("critical", []) + findings_by_severity.get(
+            "high", []
+        )
         medium_low = findings_by_severity.get("medium", []) + findings_by_severity.get("low", [])
 
         if critical_high:
@@ -606,6 +621,7 @@ Output JSON format:
                 should_fix=actions.get("suggested", []),
                 notes_for_coding_agent=[f"Review {len(findings)} telemetry findings"],
             ),
+            thinking_log=self._thinking_log,
         )
 
     def _build_error_review_output(
@@ -635,6 +651,7 @@ Output JSON format:
                 should_fix=[],
                 notes_for_coding_agent=[f"Telemetry review failed: {error_message}"],
             ),
+            thinking_log=self._thinking_log,
         )
 
     def get_system_prompt(self) -> str:

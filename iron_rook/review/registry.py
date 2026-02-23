@@ -276,7 +276,6 @@ def _register_default_reviewers() -> None:
     from iron_rook.review.agents.performance import PerformanceReliabilityReviewer
     from iron_rook.review.agents.dependencies import DependencyLicenseReviewer
     from iron_rook.review.agents.changelog import ReleaseChangelogReviewer
-    from iron_rook.review.skills.delegate_todo import DelegateTodoSkill
 
     # Register core reviewers
     ReviewerRegistry.register("security", SecurityReviewer, is_core=True)
@@ -292,7 +291,6 @@ def _register_default_reviewers() -> None:
     ReviewerRegistry.register("performance", PerformanceReliabilityReviewer, is_core=True)
     ReviewerRegistry.register("dependencies", DependencyLicenseReviewer, is_core=True)
     ReviewerRegistry.register("changelog", ReleaseChangelogReviewer, is_core=True)
-    ReviewerRegistry.register("delegate_todo", DelegateTodoSkill, is_core=True)
 
 
 _register_default_reviewers()

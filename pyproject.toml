@@ -28,6 +28,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "pytest-asyncio>=0.21", "ruff>=0.1", "mypy>=1.0"]
+eval = ["ash-hawk @ file:///Users/parkersligting/develop/pt/ash-hawk"]
 
 [project.scripts]
 iron-rook = "iron_rook.review.cli:review"

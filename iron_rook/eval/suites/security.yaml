@@ -1,0 +1,86 @@
+# Security Review Agent Evaluation Suite
+# Evaluates security reviewer on vulnerability detection, severity accuracy, and delegation
+#
+# Usage:
+#   ash-hawk run iron_rook/eval/suites/security.yaml
+#   ash-hawk run iron_rook/eval/suites/security.yaml --limit 2
+#   ash-hawk run iron_rook/eval/suites/security.yaml --provider zai-coding-plan --model glm-4.7
+
+id: security-review-v1
+name: Security Review Agent Evaluation
+description: Evaluates security reviewer on vulnerability detection, severity accuracy, and delegation
+version: "1.0.0"
+tags:
+  - security
+  - vulnerability
+  - owasp
+
+agent:
+  name: security
+  provider: zai-coding-plan
+  model: glm-4.7
+  class: iron_rook.eval.agent_runner:IronRookRunner
+  kwargs:
+    reviewer: security
+
+tasks:
+  - id: security-sql-injection
+    description: Detect SQL injection vulnerabilities
+    input:
+      code: |
+        def get_user(user_id):
+            query = f"SELECT * FROM users WHERE id = {user_id}"
+            cursor.execute(query)
+      expected_findings:
+        - SQL injection
+        - f-string in query
+    expected_output: Should detect SQL injection with critical/blocking severity
+    grader_specs:
+      - grader_type: llm_judge
+        config:
+          rubric: correctness
+          pass_threshold: 0.6
+        weight: 0.7
+        required: true
+      - grader_type: string_match
+        config:
+          contains:
+            - injection
+            - SQL
+            - vulnerability
+        weight: 0.3
+        required: false
+    tags:
+      - injection
+      - sql
+      - critical
+
+  - id: security-hardcoded-secrets
+    description: Detect hardcoded API keys and secrets
+    input:
+      code: |
+        API_KEY = "sk-prod-abc123def456"
+        DATABASE_URL = "postgres://admin:password123@db.example.com/mydb"
+      expected_findings:
+        - hardcoded API key
+        - hardcoded password
+    expected_output: Should detect hardcoded secrets with blocking severity
+    grader_specs:
+      - grader_type: llm_judge
+        config:
+          rubric: correctness
+          pass_threshold: 0.6
+        weight: 0.7
+        required: true
+      - grader_type: string_match
+        config:
+          contains:
+            - secret
+            - hardcoded
+            - credential
+        weight: 0.3
+        required: false
+    tags:
+      - secrets
+      - credentials
+      - blocking

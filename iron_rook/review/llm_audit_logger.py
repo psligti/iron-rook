@@ -7,12 +7,16 @@ and correlated across distributed operations using trace and span IDs.
 from __future__ import annotations
 
 import contextvars
+import hashlib
 import logging
 import sys
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from iron_rook.review.utils.metrics import MetricsAggregator
 
 
 trace_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("trace_id", default="")
@@ -151,8 +155,13 @@ class LLMAuditLogger:
 
     _instance: Optional["LLMAuditLogger"] = None
 
-    def __init__(self, enabled: bool = True) -> None:
+    def __init__(
+        self,
+        enabled: bool = True,
+        metrics_aggregator: Optional["MetricsAggregator"] = None,
+    ) -> None:
         self._enabled = enabled
+        self._metrics_aggregator = metrics_aggregator
         self._logger = logging.getLogger("iron_rook.llm_audit")
         self._logger.setLevel(logging.DEBUG)
         self._logger.handlers.clear()
@@ -169,11 +178,26 @@ class LLMAuditLogger:
         self._logger.addHandler(handler)
 
     @classmethod
-    def get(cls, enabled: bool = True) -> "LLMAuditLogger":
+    def get(
+        cls,
+        enabled: bool = True,
+        metrics_aggregator: Optional["MetricsAggregator"] = None,
+    ) -> "LLMAuditLogger":
         """Get or create the singleton LLMAuditLogger instance."""
         if cls._instance is None or cls._instance._enabled != enabled:
-            cls._instance = LLMAuditLogger(enabled)
+            cls._instance = LLMAuditLogger(enabled, metrics_aggregator)
+        elif metrics_aggregator is not None:
+            cls._instance._metrics_aggregator = metrics_aggregator
         return cls._instance
+
+    def set_metrics_aggregator(self, aggregator: Optional["MetricsAggregator"]) -> None:
+        self._metrics_aggregator = aggregator
+
+    @staticmethod
+    def compute_prompt_hash(system_prompt: str, user_message: str) -> str:
+        """Compute a hash of the prompt for redundant call detection."""
+        content = system_prompt + "\n" + user_message
+        return hashlib.sha256(content.encode()).hexdigest()[:16]
 
     def log_request(
         self,
@@ -218,6 +242,8 @@ class LLMAuditLogger:
         duration_ms: int = 0,
         prompt_tokens: int = 0,
         completion_tokens: int = 0,
+        findings_count: int = 0,
+        prompt_hash: str = "",
     ) -> None:
         """Log an LLM response with details."""
         if not self._enabled:
@@ -245,6 +271,16 @@ class LLMAuditLogger:
             "[LLM_RESPONSE_PREVIEW] %s",
             response_preview.replace("\n", "\\n"),
         )
+
+        if self._metrics_aggregator:
+            self._metrics_aggregator.record_call(
+                agent_name=agent_name,
+                phase=phase,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                findings_count=findings_count,
+                prompt_hash=prompt_hash,
+            )
 
     def log_error(
         self,

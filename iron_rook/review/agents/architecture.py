@@ -28,6 +28,7 @@ from iron_rook.review.contracts import (
     Scope,
     Skip,
     get_review_output_schema,
+    get_phase_output_schema,
 )
 from iron_rook.review.security_phase_logger import SecurityPhaseLogger
 
@@ -376,7 +377,7 @@ class ArchitectureReviewer(BaseReviewerAgent):
 
 You are in the {phase} phase of the 5-phase architecture review FSM.
 
-{get_review_output_schema()}
+{get_phase_output_schema(phase)}
 
 Your agent name is "architecture".
 
@@ -657,6 +658,9 @@ Output JSON format:
     ) -> ReviewOutput:
         """Build ReviewOutput from CHECK phase output.
 
+        Uses ACT phase findings directly since LLM phases may drop findings.
+        CHECK phase provides risk assessment and actions.
+
         Args:
             check_output: Output from CHECK phase
             context: ReviewContext with changed files and metadata
@@ -665,49 +669,46 @@ Output JSON format:
             ReviewOutput with findings and merge gate decision
         """
         data = check_output.get("data", {})
-        findings_by_severity = data.get("findings", {})
         risk_assessment = data.get("risk_assessment", {})
         actions = data.get("actions", {})
 
+        # Get findings directly from ACT phase (source of truth)
+        # LLM phases (SYNTHESIZE/CHECK) may drop findings due to malformed responses
+        act_data = self._phase_outputs.get("act", {}).get("data", {})
+        act_findings = act_data.get("findings", [])
+
+        # Convert ACT findings to Finding objects
         findings: List[Finding] = []
-        severity_mapping: Dict[str, str] = {
-            "critical": "critical",
-            "high": "blocking",
-            "medium": "warning",
-            "low": "warning",
-        }
-        for fsm_severity in ("critical", "high", "medium", "low"):
-            mapped = severity_mapping.get(fsm_severity, "warning")
-            finding_severity = cast(
-                Literal["warning", "critical", "blocking"],
-                "critical"
-                if mapped == "critical"
-                else ("blocking" if mapped == "blocking" else "warning"),
-            )
-            for finding_dict in findings_by_severity.get(fsm_severity, []):
-                findings.append(
-                    Finding(
-                        id=f"arch-{len(findings)}-{finding_dict.get('title', 'unknown')[:20]}",
-                        title=finding_dict.get("title", "Untitled finding"),
-                        severity=finding_severity,
-                        confidence="medium",
-                        owner="dev",
-                        estimate="S",
-                        evidence=str(finding_dict.get("evidence", "")),
-                        risk=finding_dict.get("description", finding_dict.get("risk", "")),
-                        recommendation=finding_dict.get("recommendation", ""),
-                    )
+        for finding_dict in act_findings:
+            raw_severity = finding_dict.get("severity", "warning")
+            if raw_severity == "critical":
+                finding_severity = "critical"
+            elif raw_severity == "blocking":
+                finding_severity = "blocking"
+            else:
+                finding_severity = "warning"
+
+            findings.append(
+                Finding(
+                    id=finding_dict.get("id", f"arch-{len(findings)}"),
+                    title=finding_dict.get("title", "Untitled finding"),
+                    severity=cast(Literal["warning", "critical", "blocking"], finding_severity),
+                    confidence="medium",
+                    owner="dev",
+                    estimate="S",
+                    evidence=str(finding_dict.get("evidence", "")),
+                    risk=finding_dict.get("risk", finding_dict.get("description", "")),
+                    recommendation=finding_dict.get("recommendation", ""),
                 )
+            )
 
-        # Determine merge decision
-        critical_high = findings_by_severity.get("critical", []) + findings_by_severity.get(
-            "high", []
-        )
-        medium_low = findings_by_severity.get("medium", []) + findings_by_severity.get("low", [])
+        critical_findings = [f for f in findings if f.severity == "critical"]
+        blocking_findings = [f for f in findings if f.severity == "blocking"]
+        warning_findings = [f for f in findings if f.severity == "warning"]
 
-        if critical_high:
+        if critical_findings or blocking_findings:
             decision = "block"
-        elif medium_low:
+        elif warning_findings:
             decision = "needs_changes"
         else:
             decision = "approve"
@@ -721,6 +722,9 @@ Output JSON format:
             "merge": "merge",
         }
         output_severity = severity_mapping_output.get(overall_risk, "warning")
+
+        must_fix_titles = [f.title for f in findings if f.severity in ("critical", "blocking")]
+        should_fix_titles = [f.title for f in findings if f.severity == "warning"]
 
         return ReviewOutput(
             agent=self.get_agent_name(),
@@ -741,10 +745,11 @@ Output JSON format:
             findings=findings,
             merge_gate=MergeGate(
                 decision=decision,
-                must_fix=actions.get("required", []),
-                should_fix=actions.get("suggested", []),
+                must_fix=must_fix_titles or actions.get("required", []),
+                should_fix=should_fix_titles or actions.get("suggested", []),
                 notes_for_coding_agent=[f"Review {len(findings)} architecture findings"],
             ),
+            thinking_log=self._thinking_log,
         )
 
     def _build_error_review_output(
@@ -782,6 +787,7 @@ Output JSON format:
                 should_fix=[],
                 notes_for_coding_agent=[f"Architecture review failed: {error_message}"],
             ),
+            thinking_log=self._thinking_log,
         )
 
     def get_system_prompt(self) -> str:

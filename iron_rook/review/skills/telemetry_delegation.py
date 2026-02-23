@@ -228,7 +228,7 @@ Output JSON format:
         # Execute subagents concurrently using base class method
         if subagent_requests:
             results = await self.execute_subagents_concurrently(
-                subagent_requests, context, max_concurrency=4
+                subagent_requests, context, max_concurrency=2
             )
         else:
             results = []

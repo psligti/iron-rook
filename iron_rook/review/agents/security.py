@@ -1614,6 +1614,7 @@ Output JSON format:
                     f"Overall risk assessment: {overall_risk.upper()} - {risk_assessment.get('rationale', '')}",
                 ],
             ),
+            thinking_log=self._thinking_log,
         )
 
     def _build_error_review_output(self, context: ReviewContext, error_msg: str) -> ReviewOutput:
@@ -1646,6 +1647,7 @@ Output JSON format:
                     "Please retry the review.",
                 ],
             ),
+            thinking_log=self._thinking_log,
         )
 
     def get_system_prompt(self) -> str:
