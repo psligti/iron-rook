@@ -84,7 +84,11 @@ def _get_settings():
 
 
 def _make_llm_judge(
-    rubric_path: str, pass_threshold: float = 0.7, weight: float = 0.5
+    rubric_path: str,
+    pass_threshold: float = 0.7,
+    weight: float = 0.5,
+    n_judges: int = 1,
+    confidence_threshold: float = 0.70,
 ) -> GraderSpec:
     return GraderSpec(
         grader_type="llm_judge",
@@ -92,6 +96,8 @@ def _make_llm_judge(
             "rubric": "custom",
             "custom_prompt_path": rubric_path,
             "pass_threshold": pass_threshold,
+            "n_judges": n_judges,
+            "confidence_threshold": confidence_threshold,
             **_JUDGE_CONFIG,
         },
         weight=weight,
@@ -168,9 +174,17 @@ def _make_security_graders(
     expected_tools: list[str],
     expected_keywords: list[str],
     manual_review: bool = False,
+    use_multi_judge: bool = True,
 ) -> list[GraderSpec]:
+    n_judges = 2 if use_multi_judge else 1
     graders = [
-        _make_llm_judge(rubric_path, pass_threshold=0.65, weight=0.4),
+        _make_llm_judge(
+            rubric_path,
+            pass_threshold=0.65,
+            weight=0.4,
+            n_judges=n_judges,
+            confidence_threshold=0.65,
+        ),
         _make_string_match_grader(expected_keywords, weight=0.1),
         _make_tool_call_grader(expected_tools, weight=0.15),
         _make_schema_grader(weight=0.15),
@@ -190,9 +204,11 @@ def _make_architecture_graders(
     rubric_path: str,
     expected_tools: list[str],
     expected_keywords: list[str],
+    use_multi_judge: bool = True,
 ) -> list[GraderSpec]:
+    n_judges = 2 if use_multi_judge else 1
     return [
-        _make_llm_judge(rubric_path, pass_threshold=0.65, weight=0.4),
+        _make_llm_judge(rubric_path, pass_threshold=0.65, weight=0.4, n_judges=n_judges),
         _make_string_match_grader(expected_keywords, weight=0.1),
         _make_tool_call_grader(expected_tools, weight=0.15),
         _make_schema_grader(weight=0.15),
@@ -204,9 +220,11 @@ def _make_generic_graders(
     rubric_path: str,
     expected_tools: list[str],
     expected_keywords: list[str],
+    use_multi_judge: bool = False,
 ) -> list[GraderSpec]:
+    n_judges = 2 if use_multi_judge else 1
     return [
-        _make_llm_judge(rubric_path, pass_threshold=0.6, weight=0.4),
+        _make_llm_judge(rubric_path, pass_threshold=0.6, weight=0.4, n_judges=n_judges),
         _make_string_match_grader(expected_keywords, weight=0.1),
         _make_tool_call_grader(expected_tools, weight=0.15),
         _make_schema_grader(weight=0.15),

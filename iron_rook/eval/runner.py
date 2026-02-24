@@ -264,9 +264,16 @@ class ReviewEvalRunner:
         run_id: str,
         low_score_threshold: float = 0.65,
         high_variance_threshold: float = 0.20,
+        agent_type: str | None = None,
     ) -> dict[str, Any]:
         from iron_rook.eval.calibration_types import detect_disagreements
+        from iron_rook.eval.calibration import get_disagreement_config
         from ash_hawk.storage import FileStorage
+
+        if agent_type:
+            config = get_disagreement_config(agent_type)
+            low_score_threshold = config["low_score_threshold"]
+            high_variance_threshold = config["high_variance_threshold"]
 
         storage = FileStorage(base_path=str(self._storage_path))
         summary = storage.load_summary(run_id)
@@ -285,6 +292,7 @@ class ReviewEvalRunner:
             "reasons": report.reasons,
             "low_score_threshold": low_score_threshold,
             "high_variance_threshold": high_variance_threshold,
+            "agent_type": agent_type,
             "summary": {
                 "total_trials": len(summary.trials),
                 "flagged_count": len(report.flagged_trial_ids),

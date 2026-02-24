@@ -111,6 +111,31 @@ DISAGREEMENT_CONFIG: dict[str, float] = {
     "confidence_threshold": 0.70,  # Consider "low confidence" if < 0.70
 }
 
+# Per-agent disagreement thresholds (stricter for security)
+DISAGREEMENT_THRESHOLDS_BY_AGENT: dict[str, dict[str, float]] = {
+    "security": {
+        "low_score_threshold": 0.70,  # Higher bar for security
+        "high_variance_threshold": 0.15,  # Lower tolerance for disagreement
+        "confidence_threshold": 0.75,
+    },
+    "architecture": {
+        "low_score_threshold": 0.65,
+        "high_variance_threshold": 0.20,
+        "confidence_threshold": 0.70,
+    },
+    "dependencies": {
+        "low_score_threshold": 0.65,
+        "high_variance_threshold": 0.18,
+        "confidence_threshold": 0.70,
+    },
+    "default": DISAGREEMENT_CONFIG,
+}
+
+
+def get_disagreement_config(agent_type: str) -> dict[str, float]:
+    """Get disagreement config for a specific agent type."""
+    return DISAGREEMENT_THRESHOLDS_BY_AGENT.get(agent_type, DISAGREEMENT_CONFIG)
+
 
 def get_ground_truth_file() -> str:
     """Return path to ground truth JSON file for CLI calibration."""
