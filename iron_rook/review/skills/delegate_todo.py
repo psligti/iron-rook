@@ -4,11 +4,11 @@ This skill encapsulates the delegation logic that analyzes todos from plan_todos
 phase and generates subagent requests for delegated items.
 """
 
-import asyncio
 import json
 import logging
 from typing import Any, Dict, List
 
+from dawn_kestrel.agents.execution_queue import AgentExecutionJob, InMemoryAgentExecutionQueue
 from iron_rook.review.base import BaseReviewerAgent, ReviewContext
 from iron_rook.review.contracts import (
     Check,
@@ -149,7 +149,7 @@ Output JSON format:
         Returns:
             ReviewOutput with subagent_results
         """
-        from dawn_kestrel.core.harness import SimpleReviewAgentRunner
+        from iron_rook.review.runner import SimpleReviewAgentRunner
         from iron_rook.review.subagents.security_subagent_dynamic import (
             SecuritySubagent,
         )
@@ -234,30 +234,52 @@ Output JSON format:
                         "error": str(e),
                     }
 
-            # Execute all subagents concurrently
-            subagent_tasks = [execute_subagent(request) for request in subagent_requests]
-            gather_results = await asyncio.gather(*subagent_tasks, return_exceptions=True)
+            executor = InMemoryAgentExecutionQueue(max_workers=2)
+            jobs = [
+                AgentExecutionJob(
+                    index=i,
+                    task_id=str(request.get("todo_id", f"delegate_{i}")),
+                )
+                for i, request in enumerate(subagent_requests)
+            ]
 
-            # Convert exceptions to error results and filter to Dict only
-            subagent_results = []
-            for i, result in enumerate(gather_results):
-                if isinstance(result, Exception):
-                    request = subagent_requests[i]
-                    logger.error(
-                        f"[{self.__class__.__name__}] Subagent task {request.get('todo_id')} raised exception: {result}",
-                        exc_info=True,
-                    )
-                    subagent_results.append(
-                        {
-                            "todo_id": request.get("todo_id"),
-                            "title": request.get("title"),
-                            "subagent_type": "security_subagent",
-                            "status": "blocked",
-                            "error": str(result),
-                        }
-                    )
-                else:
-                    subagent_results.append(result)
+            results_by_index: list[Dict[str, Any] | None] = [None] * len(subagent_requests)
+
+            async def execute_job(job: AgentExecutionJob) -> str:
+                idx = job.index
+                request = subagent_requests[idx]
+                results_by_index[idx] = await execute_subagent(request)
+                return job.task_id
+
+            batch_result = await executor.run_jobs(jobs=jobs, execute=execute_job)
+
+            subagent_results = [
+                result
+                if result is not None
+                else {
+                    "todo_id": subagent_requests[i].get("todo_id"),
+                    "title": subagent_requests[i].get("title"),
+                    "subagent_type": "security_subagent",
+                    "status": "blocked",
+                    "error": "subagent execution returned no result",
+                }
+                for i, result in enumerate(results_by_index)
+            ]
+
+            for index, error in batch_result.errors_by_index.items():
+                request = subagent_requests[index]
+                logger.error(
+                    f"[{self.__class__.__name__}] Subagent task {request.get('todo_id')} raised exception: {error}",
+                    exc_info=True,
+                )
+                if subagent_results[index].get("status") != "blocked":
+                    subagent_results[index] = {
+                        "todo_id": request.get("todo_id"),
+                        "title": request.get("title"),
+                        "subagent_type": "security_subagent",
+                        "status": "blocked",
+                        "error": str(error),
+                    }
 
         # Build and return ReviewOutput
         return self._build_review_output(context, subagent_results)

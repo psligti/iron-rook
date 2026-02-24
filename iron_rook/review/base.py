@@ -342,7 +342,7 @@ class BaseReviewerAgent(ABC):
             Exception: For other API-related errors
         """
         import logging
-        from dawn_kestrel.core.harness import SimpleReviewAgentRunner
+        from iron_rook.review.runner import SimpleReviewAgentRunner
         from iron_rook.review.contracts import Scope, MergeGate
 
         logger = logging.getLogger(__name__)

@@ -36,7 +36,7 @@ from iron_rook.review.contracts import (
 )
 from iron_rook.review.security_phase_logger import SecurityPhaseLogger
 from iron_rook.review.security_context import load_security_context, classify_finding_severity
-from dawn_kestrel.core.harness import SimpleReviewAgentRunner
+from iron_rook.review.runner import SimpleReviewAgentRunner
 
 logger = logging.getLogger(__name__)
 

@@ -23,7 +23,7 @@ from iron_rook.review.subagents.base_subagent import (
     MAX_ITERATIONS,
 )
 from iron_rook.review.security_phase_logger import SecurityPhaseLogger
-from dawn_kestrel.core.harness import SimpleReviewAgentRunner
+from iron_rook.review.runner import SimpleReviewAgentRunner
 
 logger = logging.getLogger(__name__)
 

@@ -5,18 +5,18 @@ that delegate work to subagents for parallel execution.
 
 Key features:
 - Abstract methods for subagent class and request building
-- Concurrent subagent execution with asyncio.gather()
+- Concurrent subagent execution with in-memory execution queue
 - Error handling with graceful degradation
 - Result aggregation across subagent outputs
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Any, Dict, List, Type
 
+from dawn_kestrel.agents.execution_queue import AgentExecutionJob, InMemoryAgentExecutionQueue
 from iron_rook.review.base import BaseReviewerAgent, ReviewContext
 
 if TYPE_CHECKING:
@@ -119,13 +119,13 @@ class BaseDelegationSkill(BaseReviewerAgent):
         """Execute subagents concurrently with error handling.
 
         Creates a subagent instance for each request and runs them in parallel
-        using asyncio.gather(). Handles exceptions gracefully, converting them
+        using dawn-kestrel's in-memory execution queue. Handles exceptions gracefully, converting them
         to error result dicts.
 
         Args:
             requests: List of request dicts (from build_subagent_request())
             context: ReviewContext to pass to each subagent
-            max_concurrency: Maximum concurrent subagents (default: 4)
+            max_concurrency: Maximum concurrent subagents (default: 2)
 
         Returns:
             List of result dicts, each containing:
@@ -183,39 +183,54 @@ class BaseDelegationSkill(BaseReviewerAgent):
                     "error": str(e),
                 }
 
-        # Use semaphore for concurrency limiting
-        semaphore = asyncio.Semaphore(max_concurrency)
+        executor = InMemoryAgentExecutionQueue(max_workers=max(1, max_concurrency))
+        jobs = [
+            AgentExecutionJob(
+                index=i,
+                task_id=str(request.get("todo_id", f"subagent_{i}")),
+            )
+            for i, request in enumerate(requests)
+        ]
 
-        async def execute_with_semaphore(request: Dict[str, Any]) -> Dict[str, Any]:
-            """Execute with concurrency limit."""
-            async with semaphore:
-                return await execute_single_subagent(request)
+        results_by_index: list[Dict[str, Any] | None] = [None] * len(requests)
 
-        # Execute all subagents concurrently
-        tasks = [execute_with_semaphore(req) for req in requests]
-        gather_results = await asyncio.gather(*tasks, return_exceptions=True)
+        async def execute_job(job: AgentExecutionJob) -> str:
+            idx = job.index
+            request = requests[idx]
+            result = await execute_single_subagent(request)
+            results_by_index[idx] = result
+            return job.task_id
 
-        # Convert exceptions to error results
-        results: List[Dict[str, Any]] = []
-        for i, item in enumerate(gather_results):
-            if isinstance(item, Exception):
-                request = requests[i]
-                logger.error(
-                    f"[{self.__class__.__name__}] Subagent task {request.get('todo_id')} "
-                    f"raised exception: {item}",
-                    exc_info=True,
-                )
-                results.append(
-                    {
-                        "todo_id": request.get("todo_id"),
-                        "title": request.get("title"),
-                        "subagent_type": subagent_type_name,
-                        "status": "blocked",
-                        "error": str(item),
-                    }
-                )
-            else:
-                results.append(item)  # type: ignore[arg-type]
+        batch_result = await executor.run_jobs(jobs=jobs, execute=execute_job)
+
+        for index, error in batch_result.errors_by_index.items():
+            request = requests[index]
+            logger.error(
+                f"[{self.__class__.__name__}] Subagent task {request.get('todo_id')} "
+                f"raised exception: {error}",
+                exc_info=True,
+            )
+            if results_by_index[index] is None:
+                results_by_index[index] = {
+                    "todo_id": request.get("todo_id"),
+                    "title": request.get("title"),
+                    "subagent_type": subagent_type_name,
+                    "status": "blocked",
+                    "error": str(error),
+                }
+
+        results: List[Dict[str, Any]] = [
+            result
+            if result is not None
+            else {
+                "todo_id": requests[i].get("todo_id"),
+                "title": requests[i].get("title"),
+                "subagent_type": subagent_type_name,
+                "status": "blocked",
+                "error": "subagent execution returned no result",
+            }
+            for i, result in enumerate(results_by_index)
+        ]
 
         # Log summary
         done_count = sum(1 for r in results if r.get("status") == "done")

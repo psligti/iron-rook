@@ -43,6 +43,7 @@ from iron_rook.review.sdk_adapter import (
 )
 from dawn_kestrel.sdk.client import OpenCodeAsyncClient
 from dawn_kestrel.core.config import SDKConfig
+from dawn_kestrel.agents.execution_queue import AgentExecutionJob, InMemoryAgentExecutionQueue
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,8 @@ class PRReviewOrchestrator:
         project_dir: Optional[Path] = None,
         sequential: bool = False,
         max_retries: int = 3,
+        max_parallel_workers: int = 2,
+        parallel_queue_timeout_seconds: float = 300.0,
         budget_config: Optional[BudgetConfig] = None,
         circuit_breaker_config: Optional[CircuitBreakerConfig] = None,
         enable_checkpoints: bool = True,
@@ -72,6 +75,8 @@ class PRReviewOrchestrator:
             project_dir: Optional project directory for SDK configuration
             sequential: Run agents sequentially instead of parallel (for rate limits)
             max_retries: Max retries on rate limit errors (429)
+            max_parallel_workers: Max number of parallel agent workers when sequential=False
+            parallel_queue_timeout_seconds: Timeout for parallel queue completion
             budget_config: Optional budget configuration for token/time limits
             circuit_breaker_config: Optional circuit breaker configuration
             enable_checkpoints: Enable checkpoint persistence for resume support
@@ -84,6 +89,10 @@ class PRReviewOrchestrator:
         self.project_dir = project_dir or Path.cwd()
         self.sequential = sequential
         self.max_retries = max_retries
+        self._parallel_executor = InMemoryAgentExecutionQueue(
+            max_workers=max_parallel_workers,
+            timeout_seconds=parallel_queue_timeout_seconds,
+        )
         self._registered_agents: dict[str, str] = {}
 
         # Resilience features
@@ -276,7 +285,7 @@ class PRReviewOrchestrator:
     async def _run_subagents_parallel(
         self, inputs: ReviewInputs, stream_callback: Callable | None = None
     ) -> List[ReviewOutput]:
-        """Run all subagents in parallel with semaphore limiting.
+        """Run all subagents in parallel using in-memory queue workers.
 
         Args:
             inputs: ReviewInputs with repo details
@@ -289,9 +298,18 @@ class PRReviewOrchestrator:
 
         verbose_logging = logger.isEnabledFor(logging.DEBUG)
 
-        tasks = []
-        semaphore = asyncio.Semaphore(2)
-        logger.info(f"Starting parallel review with {len(self.subagents)} agents, max 2 concurrent")
+        logger.info(
+            f"Starting parallel review with {len(self.subagents)} agents, "
+            f"max {self._parallel_executor.max_workers} concurrent"
+        )
+
+        all_changed_files = await get_changed_files(
+            inputs.repo_root, inputs.base_ref, inputs.head_ref
+        )
+        diff = await get_diff(inputs.repo_root, inputs.base_ref, inputs.head_ref)
+
+        results_by_index: list[ReviewOutput | None] = [None] * len(self.subagents)
+        results_lock = asyncio.Lock()
 
         if verbose_logging:
             logger.info("[VERBOSE] Subagent Details:")
@@ -299,115 +317,66 @@ class PRReviewOrchestrator:
                 agent_name = agent.get_agent_name()
                 logger.info(f"[VERBOSE]   Agent #{idx + 1}: {agent_name}")
 
-        for idx, agent in enumerate(self.subagents):
+        jobs = [
+            AgentExecutionJob(index=i, task_id=f"review_{self.subagents[i].get_agent_name()}_{i}")
+            for i in range(len(self.subagents))
+        ]
 
-            async def run_with_timeout(current_agent=agent):
-                async with semaphore:
-                    agent_name = current_agent.get_agent_name()
-                    logger.info(f"[{agent_name}] Starting agent")
+        async def execute_parallel_job(job: AgentExecutionJob) -> str:
+            idx = job.index
+            agent = self.subagents[idx]
+            agent_name = agent.get_agent_name()
 
-                    if verbose_logging:
-                        logger.info(
-                            f"[VERBOSE] [{agent_name}] Agent class: {current_agent.__class__.__name__}"
-                        )
-                        logger.info(
-                            f"[VERBOSE] [{agent_name}] Allowed tools: {current_agent.get_allowed_tools()}"
-                        )
-                        logger.info(
-                            f"[VERBOSE] [{agent_name}] Relevant patterns: {current_agent.get_relevant_file_patterns()}"
-                        )
+            result = await self._execute_single_agent(
+                agent=agent,
+                agent_name=agent_name,
+                inputs=inputs,
+                all_changed_files=all_changed_files,
+                diff=diff,
+                stream_callback=stream_callback,
+                verbose_logging=verbose_logging,
+            )
 
-                    context = None
-                    try:
-                        if stream_callback:
-                            await stream_callback(agent_name, "started", {})
+            async with results_lock:
+                results_by_index[idx] = result
+            return job.task_id
 
-                        logger.info(f"[{agent_name}] Building context...")
-                        all_changed_files = await get_changed_files(
-                            inputs.repo_root, inputs.base_ref, inputs.head_ref
-                        )
-                        diff = await get_diff(inputs.repo_root, inputs.base_ref, inputs.head_ref)
+        batch_result = await self._parallel_executor.run_jobs(
+            jobs=jobs, execute=execute_parallel_job
+        )
 
-                        if current_agent.is_relevant_to_changes(all_changed_files):
-                            changed_files = all_changed_files
-                        else:
-                            changed_files = []
-                            logger.info(
-                                f"[{agent_name}] Agent not relevant to changes, skipping review"
-                            )
+        for index, error in batch_result.errors_by_index.items():
+            agent_name = self.subagents[index].get_agent_name()
+            logger.error(f"[{agent_name}] Parallel worker failed: {error}")
 
-                        context = ReviewContext(
-                            changed_files=changed_files,
-                            diff=diff,
-                            repo_root=inputs.repo_root,
-                            base_ref=inputs.base_ref,
-                            head_ref=inputs.head_ref,
-                            pr_title=inputs.pr_title,
-                            pr_description=inputs.pr_description,
-                        )
+            if results_by_index[index] is None:
+                fallback_context = ReviewContext(
+                    changed_files=[],
+                    diff="",
+                    repo_root=inputs.repo_root,
+                    base_ref=inputs.base_ref,
+                    head_ref=inputs.head_ref,
+                )
+                results_by_index[index] = create_error_review_output(
+                    agent_name, error, fallback_context
+                )
 
-                        logger.info(
-                            f"[{agent_name}] Context built: {len(context.changed_files)} files, {len(context.diff)} chars diff"
-                        )
-                        logger.debug(
-                            f"[{agent_name}] Changed files: {', '.join(context.changed_files[:10])}"
-                        )
-
-                        if verbose_logging:
-                            logger.info(f"[VERBOSE] [{agent_name}] Context details:")
-                            logger.info(
-                                f"[VERBOSE] [{agent_name}]   Repo root: {context.repo_root}"
-                            )
-                            logger.info(f"[VERBOSE] [{agent_name}]   Base ref: {context.base_ref}")
-                            logger.info(f"[VERBOSE] [{agent_name}]   Head ref: {context.head_ref}")
-                            logger.info(f"[VERBOSE] [{agent_name}]   PR title: {context.pr_title}")
-
-                        if current_agent.prefers_direct_review():
-                            if verbose_logging:
-                                logger.info(
-                                    f"[VERBOSE] [{agent_name}] Using direct review (agent has FSM)"
-                                )
-                            result = await current_agent.review(context)
-                        else:
-                            result = await self._execute_agent_via_sdk(
-                                current_agent, context, agent_name, verbose_logging
-                            )
-
-                        logger.info(f"[{agent_name}] Review completed")
-                        if result:
-                            logger.info(
-                                f"[{agent_name}] Result: {result.severity} severity, {len(result.findings)} findings"
-                            )
-                        else:
-                            logger.warning(
-                                f"[{agent_name}] Result: None (review returned no output)"
-                            )
-
-                        if stream_callback:
-                            await stream_callback(agent_name, "completed", {}, result=result)
-
-                        return result
-
-                    except Exception as e:
-                        error_msg = str(e)
-                        logger.error(f"[{agent_name}] Error: {error_msg}", exc_info=True)
-
-                        if stream_callback:
-                            await stream_callback(agent_name, "error", {"error": error_msg})
-
-                        fallback_context = context or ReviewContext(
-                            changed_files=[],
-                            diff="",
-                            repo_root=inputs.repo_root,
-                            base_ref=inputs.base_ref,
-                            head_ref=inputs.head_ref,
-                        )
-                        return create_error_review_output(agent_name, error_msg, fallback_context)
-
-            tasks.append(run_with_timeout())
-
-        results = await asyncio.gather(*tasks, return_exceptions=False)
-        return results
+        return [
+            result
+            if result is not None
+            else create_error_review_output(
+                self.subagents[index].get_agent_name(),
+                "Parallel execution did not return a result",
+                ReviewContext(
+                    changed_files=[],
+                    diff="",
+                    repo_root=inputs.repo_root,
+                    base_ref=inputs.base_ref,
+                    head_ref=inputs.head_ref,
+                ),
+            )
+            for index, result in enumerate(results_by_index)
+        ]
 
     async def _execute_single_agent(
         self,

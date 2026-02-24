@@ -16,7 +16,7 @@ import json
 import logging
 from typing import Any, Dict, List, Literal, cast
 
-from dawn_kestrel.core.harness import SimpleReviewAgentRunner
+from iron_rook.review.runner import SimpleReviewAgentRunner
 
 from iron_rook.review.base import BaseReviewerAgent, ReviewContext
 from iron_rook.review.contracts import (

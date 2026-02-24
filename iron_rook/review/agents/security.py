@@ -23,7 +23,7 @@ from iron_rook.review.contracts import (
     get_phase_output_schema,
 )
 from iron_rook.review.skills.delegate_todo import DelegateTodoSkill
-from dawn_kestrel.core.harness import SimpleReviewAgentRunner
+from iron_rook.review.runner import SimpleReviewAgentRunner
 
 logger = logging.getLogger(__name__)
 
@@ -1345,7 +1345,7 @@ Output JSON format:
             Exception: For other API-related errors
         """
         import time
-        from dawn_kestrel.core.harness import SimpleReviewAgentRunner
+        from iron_rook.review.runner import SimpleReviewAgentRunner
         from iron_rook.review.llm_audit_logger import LLMAuditLogger
 
         llm_logger = LLMAuditLogger.get()

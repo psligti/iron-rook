@@ -140,7 +140,7 @@ Output JSON format:
 {get_phase_output_schema("delegate")}"""
 
     async def review(self, context: ReviewContext) -> ReviewOutput:
-        from dawn_kestrel.core.harness import SimpleReviewAgentRunner
+        from iron_rook.review.runner import SimpleReviewAgentRunner
 
         logger.info(
             f"[{self.__class__.__name__}] Starting DELEGATE phase with {len(context.changed_files)} changed files"

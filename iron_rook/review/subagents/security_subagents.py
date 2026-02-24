@@ -24,7 +24,7 @@ from iron_rook.review.contracts import (
     Finding,
 )
 
-from dawn_kestrel.core.harness import SimpleReviewAgentRunner
+from iron_rook.review.runner import SimpleReviewAgentRunner
 
 logger = logging.getLogger(__name__)
 

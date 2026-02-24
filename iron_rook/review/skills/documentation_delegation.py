@@ -183,7 +183,7 @@ Output JSON format:
         Returns:
             ReviewOutput with subagent_results
         """
-        from dawn_kestrel.core.harness import SimpleReviewAgentRunner
+        from iron_rook.review.runner import SimpleReviewAgentRunner
 
         logger.info(
             f"[{self.__class__.__name__}] Starting DELEGATE phase with {len(context.changed_files)} changed files"
